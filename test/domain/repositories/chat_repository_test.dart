@@ -337,21 +337,30 @@ void main() {
   });
 
   // -------------------------------------------------------------------------
-  // 9. Send failure marks placeholder as failed
+  // 9. Send failure rethrows and marks placeholder as failed
   // -------------------------------------------------------------------------
 
-  test('send failure: placeholder marked failed with (send failed:) TextPart',
+  test('send failure: rethrows gateway exception and marks placeholder failed',
       () async {
-    gw.sendError = Exception('network error');
+    final error = Exception('network error');
+    gw.sendError = error;
 
-    await repo.send(sessionKey: 's1', text: 'failing');
+    // send() must throw the same exception the fake gateway threw.
+    await expectLater(
+      () => repo.send(sessionKey: 's1', text: 'failing'),
+      throwsA(error),
+    );
 
+    // After catching the exception the placeholder must be marked failed with
+    // a '(send failed: …)' TextPart so caller-side failures are distinguishable
+    // from gateway-side ChatFailed events.
     final list = await repo.messages('s1').first;
     expect(list, hasLength(2));
 
     final assistant = list.last;
     expect(assistant.streaming, StreamingState.failed);
-    final text = assistant.parts.whereType<TextPart>().first.text;
-    expect(text, contains('network error'));
+    final failText = assistant.parts.whereType<TextPart>().first.text;
+    expect(failText, startsWith('(send failed:'));
+    expect(failText, contains('network error'));
   });
 }

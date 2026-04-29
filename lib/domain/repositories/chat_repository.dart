@@ -92,8 +92,9 @@ class ChatRepository {
   /// Optimistically insert a user message + assistant placeholder, call
   /// [GatewayClient.sendMessage], and correlate subsequent streaming events.
   ///
-  /// Returns the [ChatRun]. On gateway error the placeholder is marked failed.
-  /// Does NOT throw; errors are surfaced via the messages stream.
+  /// Returns the [ChatRun] from the gateway. **Throws** if the gateway send
+  /// fails (the placeholder is marked failed first, then the exception
+  /// propagates).
   Future<ChatRun> send({
     required String sessionKey,
     required String text,
@@ -138,16 +139,16 @@ class ChatRepository {
 
       return run;
     } catch (e) {
-      // Mark the placeholder as failed and surface via the messages stream.
-      // Do NOT rethrow — callers inspect message state, not exceptions.
+      // Mark the placeholder as failed, then rethrow so callers can detect
+      // the failure synchronously.
       _markFailed(
         sessionKey: sessionKey,
         runId: null,
         reason: e.toString(),
         isOptimisticFailure: true,
+        prefix: 'send failed',
       );
-      // Return a synthetic ChatRun (runId='') so Future<ChatRun> is satisfied.
-      return ChatRun(runId: '', sessionKey: sessionKey);
+      rethrow;
     }
   }
 
@@ -268,11 +269,16 @@ class ChatRepository {
   }
 
   /// Mark a message as failed, appending a failure TextPart.
+  ///
+  /// [prefix] controls the label inside the parentheses: `'(failed: …)'` by
+  /// default, or `'(send failed: …)'` for optimistic-insert failures so
+  /// caller-side and gateway-side failures are distinguishable in logs/UI.
   void _markFailed({
     required String sessionKey,
     required String? runId,
     required String reason,
     bool isOptimisticFailure = false,
+    String prefix = 'failed',
   }) {
     final list = _listFor(sessionKey);
 
@@ -292,7 +298,7 @@ class ChatRepository {
     if (idx == -1) return;
 
     final msg = list[idx];
-    final failureParts = [...msg.parts, TextPart('(failed: $reason)')];
+    final failureParts = [...msg.parts, TextPart('($prefix: $reason)')];
 
     final updated = List<Message>.of(list);
     updated[idx] = msg.copyWith(
