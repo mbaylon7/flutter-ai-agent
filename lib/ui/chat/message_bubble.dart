@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
+import 'package:stt_tts/ui/chat/markdown_renderer.dart';
 
 /// A single chat message bubble.
 ///
@@ -218,16 +219,27 @@ class _BubbleBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // TODO(Task 7): swap in MarkdownRenderer for assistant role
     final text = message.visibleText;
 
+    // Assistant messages are rendered with OcMarkdown so that code blocks,
+    // headings, bold/italic, links etc. display with proper formatting.
+    // User / system / tool messages stay as plain Text (they are never
+    // markdown-formatted by the user).
+    final isAssistant = message.role == Role.assistant;
+
     return switch (message.streaming) {
-      StreamingState.partial => _PartialBody(text: text, textColor: textColor),
-      StreamingState.failed => _FailedBody(text: text, textColor: textColor),
-      StreamingState.finalized || StreamingState.none => Text(
-          text,
-          style: TextStyle(color: textColor, fontSize: 14, height: 1.45),
+      StreamingState.partial => _PartialBody(
+          text: text,
+          textColor: textColor,
+          isAssistant: isAssistant,
         ),
+      StreamingState.failed => _FailedBody(text: text, textColor: textColor),
+      StreamingState.finalized || StreamingState.none => isAssistant
+          ? OcMarkdown(text) // Task 7: use markdown renderer for assistant
+          : Text(
+              text,
+              style: TextStyle(color: textColor, fontSize: 14, height: 1.45),
+            ),
     };
   }
 }
@@ -237,24 +249,35 @@ class _BubbleBody extends StatelessWidget {
 // ---------------------------------------------------------------------------
 
 class _PartialBody extends StatelessWidget {
-  const _PartialBody({required this.text, required this.textColor});
+  const _PartialBody({
+    required this.text,
+    required this.textColor,
+    this.isAssistant = false,
+  });
 
   final String text;
   final Color textColor;
+  final bool isAssistant;
 
   @override
   Widget build(BuildContext context) {
+    // For assistant streaming content, use OcMarkdown so formatting renders
+    // live as tokens arrive. The incomplete-fence guard in OcMarkdown handles
+    // mid-block streaming gracefully.
+    final body = text.isEmpty
+        ? null
+        : isAssistant
+            ? OcMarkdown(text) // Task 7: markdown during streaming
+            : Text(
+                text,
+                style: TextStyle(color: textColor, fontSize: 14, height: 1.45),
+              );
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (text.isNotEmpty)
-          Flexible(
-            child: Text(
-              text,
-              style: TextStyle(color: textColor, fontSize: 14, height: 1.45),
-            ),
-          ),
+        if (body != null) Flexible(child: body),
         const SizedBox(width: 4),
         const _StreamingDots(key: Key('streaming_dots')),
       ],
