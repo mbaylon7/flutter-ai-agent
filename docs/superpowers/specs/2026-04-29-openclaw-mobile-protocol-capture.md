@@ -208,7 +208,185 @@ The full list comes from `Hello.payload.features.methods` and is too long to inl
 - `agent`, `chat`, `session.message`, `session.tool`, `sessions.changed`
 - (and more — the full list is in the captured Hello)
 
-The exact streaming-event payload shape for chat (what `chat.send` triggers) is the next thing to capture in slice 1B's pre-flight.
+## 5.1 Chat round-trip (captured against live gateway)
+
+### Request — `chat.send`
+
+```json
+{
+  "type": "req",
+  "id": "<uuid>",
+  "method": "chat.send",
+  "params": {
+    "sessionKey": "agent:main:main",
+    "message": "Reply with one word: pong",
+    "idempotencyKey": "<uuid>"
+  }
+}
+```
+
+**Note:** the parameter is `sessionKey` (e.g. `"agent:main:main"`), not `sessionId`. The field is `message`, not `text`. `idempotencyKey` is **required**.
+
+### Response — immediate
+
+```json
+{
+  "type": "res",
+  "id": "<request-id>",
+  "ok": true,
+  "payload": {"runId": "<uuid>", "status": "started"}
+}
+```
+
+The `runId` identifies this generation turn. Use it to correlate streaming events and to call `chat.abort`.
+
+### Streaming events while running
+
+The server pushes a sequence of `event` frames with these shapes:
+
+```json
+// Run started
+{"type":"event","event":"agent","payload":{
+  "runId":"<runId>","stream":"lifecycle","sessionKey":"...",
+  "data":{"phase":"start","startedAt":<ms>},"seq":1,"ts":<ms>
+}}
+
+// Streaming assistant text (one or many)
+{"type":"event","event":"agent","payload":{
+  "runId":"<runId>","stream":"assistant","sessionKey":"...",
+  "data":{"text":"<full so far>","delta":"<new chunk>"},
+  "seq":2,"ts":<ms>
+}}
+
+// Chat-mode delta (mirrors agent.assistant, with the message wrapper)
+{"type":"event","event":"chat","payload":{
+  "runId":"<runId>","sessionKey":"...","seq":2,"state":"delta",
+  "message":{"role":"assistant","content":[{"type":"text","text":"<full so far>"}],"timestamp":<ms>}
+}}
+
+// Run ended
+{"type":"event","event":"agent","payload":{
+  "runId":"<runId>","stream":"lifecycle","sessionKey":"...",
+  "data":{"phase":"end","livenessState":"working","endedAt":<ms>},"seq":3,"ts":<ms>
+}}
+
+// Final message
+{"type":"event","event":"chat","payload":{
+  "runId":"<runId>","sessionKey":"...","seq":3,"state":"final",
+  "message":{"role":"assistant","content":[{"type":"text","text":"<final>"}],"timestamp":<ms>}
+}}
+```
+
+**Practical client rule:** subscribe to `chat` events with `state:"delta"` to update the streaming bubble; on `state:"final"` mark the message as done. The `agent` events with `stream:"lifecycle"` drive the "Thinking" indicator (start → end). `agent` events with `stream:"assistant"` are redundant with `chat.delta` for plain-text replies but carry richer `data` for tool calls.
+
+## 5.2 `chat.history` (captured against live gateway)
+
+### Request
+
+```json
+{"type":"req","id":"<uuid>","method":"chat.history","params":{"sessionKey":"agent:main:main"}}
+```
+
+### Response
+
+```json
+{
+  "sessionKey": "agent:main:main",
+  "sessionId": "<uuid>",
+  "messages": [/* message[] — see §5.3 */]
+}
+```
+
+## 5.3 Message structure (rich, multi-part)
+
+Every message has `role`, a `content` array of parts, and a `timestamp` (Unix ms).
+
+### User message
+
+```json
+{
+  "role": "user",
+  "content": [{"type": "text", "text": "..."}],
+  "timestamp": <ms>,
+  "__openclaw": {"id": "<short>", "seq": <int>}
+}
+```
+
+### Assistant message — multiple part types
+
+```json
+{
+  "role": "assistant",
+  "content": [
+    {"type": "thinking", "thinking": "..."},          // hide from user by default
+    {"type": "text", "text": "..."},                   // show in bubble
+    {"type": "toolCall", "id": "toolu_...", "name": "<tool>", "arguments": {...}}
+  ],
+  "api": "anthropic-messages",
+  "provider": "anthropic",
+  "model": "claude-haiku-...",
+  "usage": {"input": ..., "output": ..., "totalTokens": ..., "cost": {"total": ...}},
+  "stopReason": "toolUse" | "end_turn" | ...,
+  "timestamp": <ms>,
+  "responseId": "msg_...",
+  "__openclaw": {"id": "<short>", "seq": <int>}
+}
+```
+
+### Tool result — its own role
+
+```json
+{
+  "role": "toolResult",
+  "toolCallId": "toolu_...",
+  "toolName": "<tool>",
+  "content": [{"type": "text", "text": "..."}],
+  "isError": false,
+  "timestamp": <ms>,
+  "__openclaw": {...}
+}
+```
+
+**UI rendering rules (matches the design spec §8.3):**
+- `text` → render in bubble (with markdown).
+- `thinking` → hide by default; could surface in a debug panel later.
+- `toolCall` → render as part of the "📎 N sources ▾" pill at the bottom of the assistant bubble.
+- `toolResult` → pair with its `toolCall` by `toolCallId`; the result text becomes the source content shown in the bottom-sheet.
+
+## 5.4 `sessions.list` (captured against live gateway)
+
+### Response
+
+```json
+{
+  "ts": <ms>,
+  "path": "(multiple)",
+  "count": N,
+  "defaults": {"modelProvider": "anthropic", "model": "...", "contextTokens": 200000},
+  "sessions": [
+    {
+      "key": "agent:main:main",            // stable identifier — use as sessionKey
+      "kind": "direct",
+      "displayName": "heartbeat",          // user-visible title
+      "chatType": "direct",
+      "sessionId": "<uuid>",               // internal id
+      "updatedAt": <ms>,                   // Unix milliseconds
+      "status": "done" | "...",
+      "model": "claude-haiku-...",
+      "modelProvider": "anthropic",
+      "inputTokens": <n>,
+      "outputTokens": <n>,
+      "totalTokens": <n>,
+      "estimatedCostUsd": <number>,
+      "startedAt": <ms>, "endedAt": <ms>, "runtimeMs": <n>,
+      "deliveryContext": {"channel": "webchat", "to": "..."},
+      ...
+    }
+  ]
+}
+```
+
+**Key rule:** the `key` field (e.g. `"agent:main:main"`) is the **stable identifier** used as `sessionKey` in `chat.send` and `chat.history`. The `sessionId` UUID may rotate per run. Store and pass `key`.
 
 ## 6. Heartbeat
 
