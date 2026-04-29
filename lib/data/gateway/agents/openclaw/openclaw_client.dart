@@ -8,6 +8,8 @@ import 'package:stt_tts/data/gateway/connection_config.dart';
 import 'package:stt_tts/data/gateway/gateway_client.dart';
 import 'package:stt_tts/data/gateway/shared/device_identity.dart';
 import 'package:stt_tts/data/gateway/shared/ws_connection.dart';
+import 'package:stt_tts/domain/models/message.dart';
+import 'package:stt_tts/domain/models/session.dart';
 
 class OpenClawGatewayClient implements GatewayClient {
   OpenClawGatewayClient({
@@ -115,9 +117,162 @@ class OpenClawGatewayClient implements GatewayClient {
   @override
   Future<void> disconnect() async {
     _state.add(ConnectionState.disconnected);
+    await _chatStream.close();
+    await _sessionStream.close();
+    await _eventSub?.cancel();
     await _rpc?.close();
     await _conn?.close();
+    _eventSub = null;
     _rpc = null;
     _conn = null;
+  }
+
+  // ===== Event routing =====
+
+  StreamSubscription? _eventSub;
+  final _chatStream = StreamController<ChatStreamEvent>.broadcast();
+  final _sessionStream = StreamController<Session>.broadcast();
+
+  void _ensureEventRouter() {
+    if (_eventSub != null) return;
+    _eventSub = _conn!.frames.listen((f) {
+      if (f is! EventFrame) return;
+      _routeEvent(f);
+    });
+  }
+
+  void _routeEvent(EventFrame f) {
+    final p = f.payload;
+    switch (f.event) {
+      case 'agent':
+        // {runId, stream:"lifecycle", sessionKey, data:{phase:"start"|"end"}}
+        if (p['stream'] == 'lifecycle') {
+          final phase = (p['data'] as Map?)?['phase'];
+          final runId = p['runId'] as String? ?? '';
+          final sk = p['sessionKey'] as String? ?? '';
+          if (phase == 'start') {
+            _chatStream.add(ChatStarted(runId: runId, sessionKey: sk));
+          } else if (phase == 'end') {
+            _chatStream.add(ChatEnded(runId: runId, sessionKey: sk));
+          }
+        }
+        // We ignore stream:"assistant" — the matching `chat` delta carries
+        // the same content with the message wrapper.
+        break;
+      case 'chat':
+        // {runId, sessionKey, state:"delta"|"final", message:{...}}
+        final runId = p['runId'] as String? ?? '';
+        final sk = p['sessionKey'] as String? ?? '';
+        final state = p['state'] as String?;
+        final msg = (p['message'] as Map?)?.cast<String, dynamic>();
+        if (msg == null) break;
+        final parsed = Message.fromJson(msg).copyWith(
+          streaming: state == 'final'
+              ? StreamingState.finalized
+              : StreamingState.partial,
+          runId: runId,
+        );
+        if (state == 'delta') {
+          _chatStream.add(
+            ChatDelta(runId: runId, sessionKey: sk, message: parsed),
+          );
+        } else if (state == 'final') {
+          _chatStream.add(
+            ChatFinal(runId: runId, sessionKey: sk, message: parsed),
+          );
+        }
+        break;
+      case 'sessions.changed':
+      case 'session.added':
+      case 'session.updated':
+        final session = (p as Map?)?.cast<String, dynamic>();
+        if (session != null && session['key'] != null) {
+          _sessionStream.add(Session.fromJson(session));
+        }
+        break;
+    }
+  }
+
+  // ===== Sessions =====
+
+  @override
+  Future<List<Session>> listSessions() async {
+    _ensureEventRouter();
+    final res = await _rpc!.request(
+      method: 'sessions.list',
+      params: const {},
+    );
+    final list = (res['sessions'] as List? ?? const []).cast<Map>();
+    return list
+        .map((m) => Session.fromJson(m.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  @override
+  Stream<Session> watchSessionUpdates() {
+    _ensureEventRouter();
+    return _sessionStream.stream;
+  }
+
+  @override
+  Future<void> patchSession(String sessionKey, {String? title}) async {
+    final params = <String, dynamic>{'sessionKey': sessionKey};
+    if (title != null) params['displayName'] = title;
+    await _rpc!.request(method: 'sessions.patch', params: params);
+  }
+
+  @override
+  Future<void> deleteSession(String sessionKey) async {
+    await _rpc!.request(
+      method: 'sessions.delete',
+      params: {'sessionKey': sessionKey},
+    );
+  }
+
+  // ===== Chat =====
+
+  @override
+  Future<List<Message>> loadHistory(String sessionKey) async {
+    _ensureEventRouter();
+    final res = await _rpc!.request(
+      method: 'chat.history',
+      params: {'sessionKey': sessionKey},
+    );
+    final raw = (res['messages'] as List? ?? const []).cast<Map>();
+    return raw
+        .map((m) => Message.fromJson(m.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  @override
+  Future<ChatRun> sendMessage({
+    required String sessionKey,
+    required String text,
+    required String idempotencyKey,
+  }) async {
+    _ensureEventRouter();
+    final res = await _rpc!.request(
+      method: 'chat.send',
+      params: {
+        'sessionKey': sessionKey,
+        'message': text,
+        'idempotencyKey': idempotencyKey,
+      },
+    );
+    return ChatRun(
+      runId: res['runId'] as String,
+      sessionKey: sessionKey,
+    );
+  }
+
+  @override
+  Stream<ChatStreamEvent> watchChat() {
+    _ensureEventRouter();
+    return _chatStream.stream;
+  }
+
+  @override
+  Future<void> abort(String runId) async {
+    await _rpc!.request(method: 'chat.abort', params: {'runId': runId});
   }
 }

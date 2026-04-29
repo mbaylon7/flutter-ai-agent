@@ -52,7 +52,8 @@
       "Bash(OPENCLAW_INTEGRATION=1 flutter test --tags integration test/data/gateway/agents/openclaw/openclaw_client_integration_test.dart)",
       "Bash(dart run *)",
       "Bash(OPENCLAW_INTEGRATION=1 flutter test --tags integration test/data/gateway/agents/openclaw/probe_sessions_test.dart)",
-      "Bash(OPENCLAW_INTEGRATION=1 flutter test --tags integration test/data/gateway/agents/openclaw/probe_chat_test.dart)"
+      "Bash(OPENCLAW_INTEGRATION=1 flutter test --tags integration test/data/gateway/agents/openclaw/probe_chat_test.dart)",
+      "Bash(OPENCLAW_INTEGRATION=1 flutter test --tags integration test/data/gateway/agents/openclaw/chat_round_trip_test.dart)"
     ]
   }
 }
