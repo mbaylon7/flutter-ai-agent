@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:stt_tts/core/theme.dart';
+import 'package:stt_tts/ui/shell/home_shell.dart';
 import 'package:stt_tts/ui/widgets/oc_button.dart';
 
 class ReadyScreen extends StatelessWidget {
@@ -52,7 +53,15 @@ class ReadyScreen extends StatelessWidget {
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 26),
-                  OcButton(label: 'Done for now', onPressed: () {}),
+                  OcButton(
+                    label: 'Go to OpenClaw',
+                    onPressed: () => Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                        builder: (_) => const HomeShell(),
+                      ),
+                      (_) => false,
+                    ),
+                  ),
                 ],
               ),
             ),

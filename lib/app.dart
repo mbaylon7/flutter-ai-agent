@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/state/connection_provider.dart';
 import 'package:stt_tts/ui/onboarding/welcome_screen.dart';
+import 'package:stt_tts/ui/shell/home_shell.dart';
 
 class OpenClawApp extends ConsumerWidget {
   const OpenClawApp({super.key});
@@ -32,15 +33,7 @@ class _AppRouter extends ConsumerWidget {
       ),
       data: (connected) {
         if (connected) {
-          // TODO(Task 9): Replace with HomeShell once it is built.
-          return Scaffold(
-            body: Center(
-              child: Text(
-                'Connected — HomeShell coming in Task 9',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          );
+          return const HomeShell();
         }
         return const WelcomeScreen();
       },
