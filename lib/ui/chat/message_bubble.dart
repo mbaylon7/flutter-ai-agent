@@ -6,20 +6,29 @@ import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 import 'package:stt_tts/ui/chat/markdown_renderer.dart';
+import 'package:stt_tts/ui/chat/sources_pill.dart';
+import 'package:stt_tts/ui/chat/sources_sheet.dart';
 
 /// A single chat message bubble.
 ///
 /// [isLastAssistant] is true when this is the last assistant message in the
 /// visible list — used to show the Stop button for in-flight runs.
+///
+/// [allMessages] is the full ordered list for the current session, passed in
+/// from ChatScreen so that the sources pill can find tool-result Messages that
+/// follow this assistant message without re-watching the provider per bubble.
+/// Defaults to empty (no pill rendered in tests that don't supply it).
 class MessageBubble extends ConsumerWidget {
   const MessageBubble({
     super.key,
     required this.message,
     required this.isLastAssistant,
+    this.allMessages = const [],
   });
 
   final Message message;
   final bool isLastAssistant;
+  final List<Message> allMessages;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -29,6 +38,7 @@ class MessageBubble extends ConsumerWidget {
           message: message,
           isLastAssistant: isLastAssistant,
           ref: ref,
+          allMessages: allMessages,
         ),
       Role.tool || Role.toolResult => _ToolLine(message: message),
       Role.system => _SystemLine(message: message),
@@ -86,14 +96,35 @@ class _AssistantBubble extends StatelessWidget {
     required this.message,
     required this.isLastAssistant,
     required this.ref,
+    required this.allMessages,
   });
 
   final Message message;
   final bool isLastAssistant;
   final WidgetRef ref;
+  final List<Message> allMessages;
+
+  /// Walks forward from [msgIndex]+1 in [allMessages] collecting consecutive
+  /// toolResult messages, then builds a map from toolCallId → Message.
+  Map<String, Message> _buildResultsMap(int msgIndex) {
+    final map = <String, Message>{};
+    for (int i = msgIndex + 1; i < allMessages.length; i++) {
+      final m = allMessages[i];
+      if (m.role != Role.toolResult) break;
+      if (m.toolCallId != null) map[m.toolCallId!] = m;
+    }
+    return map;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final toolCalls = message.toolCalls;
+
+    // Find this message's index in allMessages so we can locate tool results.
+    final msgIndex = allMessages.indexOf(message);
+    final resultsByCallId =
+        msgIndex >= 0 ? _buildResultsMap(msgIndex) : const <String, Message>{};
+
     return Align(
       key: const Key('bubble_align_assistant'),
       alignment: Alignment.centerLeft,
@@ -117,8 +148,30 @@ class _AssistantBubble extends StatelessWidget {
                 textColor: OcColors.textBody,
               ),
             ),
-            // TODO(Task 8): sources pill goes here when toolCalls is non-empty
-            const SizedBox.shrink(),
+            // Sources pill — shown when the assistant message has tool calls.
+            if (toolCalls.isNotEmpty)
+              Padding(
+                padding:
+                    const EdgeInsets.only(left: 16, right: 12, bottom: 2),
+                child: SourcesPill(
+                  count: toolCalls.length,
+                  onTap: () {
+                    showModalBottomSheet<void>(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: OcColors.surface,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(16)),
+                      ),
+                      builder: (_) => SourcesSheet(
+                        calls: toolCalls,
+                        resultsByCallId: resultsByCallId,
+                      ),
+                    );
+                  },
+                ),
+              ),
             if (isLastAssistant &&
                 message.streaming == StreamingState.partial &&
                 message.runId != null)

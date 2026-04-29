@@ -170,6 +170,7 @@ class _SessionThread extends ConsumerWidget {
                     ),
                     message: msg,
                     isLastAssistant: msgIndex == lastAssistantIdx,
+                    allMessages: messages,
                   );
                 },
               ),
