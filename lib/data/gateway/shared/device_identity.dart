@@ -84,7 +84,7 @@ class DeviceIdentityManager {
     final keyPair = await _algo.newKeyPair();
     final secret = await keyPair.extractPrivateKeyBytes();
     final pub = await keyPair.extractPublicKey();
-    final pubBytes = await pub.bytes;
+    final pubBytes = pub.bytes;
     final hash = await _sha.hash(pubBytes);
     final deviceId = hexLower(hash.bytes);
     final pubB64u = base64UrlNoPad(pubBytes);
