@@ -5,6 +5,7 @@ import 'package:stt_tts/app.dart';
 void main() {
   testWidgets('OpenClaw boots with welcome screen', (tester) async {
     await tester.pumpWidget(const ProviderScope(child: OpenClawApp()));
-    expect(find.text('OpenClaw — slice 1A'), findsOneWidget);
+    expect(find.text('OpenClaw'), findsOneWidget);
+    expect(find.text('Connect to my OpenClaw'), findsOneWidget);
   });
 }

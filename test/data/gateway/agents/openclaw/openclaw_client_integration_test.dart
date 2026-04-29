@@ -25,6 +25,7 @@ void main() {
       );
       expect(hello.role, isNotEmpty);
       // deviceToken may or may not be returned depending on gateway version
+      // ignore: avoid_print
       print('hello: role=${hello.role}, deviceToken=${hello.deviceToken != null ? "received" : "none"}');
       await client.disconnect();
     },
