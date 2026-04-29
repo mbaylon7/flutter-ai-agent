@@ -16,7 +16,14 @@ abstract class LocalStore {
   /// For [InMemoryLocalStore] this is a no-op.
   Future<void> open();
 
+  /// Closes the store and releases any underlying resources.
+  /// Calling [open] again after [close] must work correctly.
+  /// Default implementation is a no-op.
+  Future<void> close() async {}
+
   /// Insert or fully replace a session (keyed by [Session.key]).
+  ///
+  /// updatedAt is stored as ms-epoch; sub-millisecond precision is truncated.
   Future<void> upsertSession(Session s);
 
   /// Returns all sessions, sorted: pinned first, then by [Session.updatedAt] DESC.
@@ -47,6 +54,7 @@ class SqfliteLocalStore extends LocalStore {
 
   @override
   Future<void> open() async {
+    if (_db != null) return; // already open — guard against double-open
     final dir = await getApplicationDocumentsDirectory();
     final path = p.join(dir.path, _kDbName);
     _db = await openDatabase(
@@ -54,6 +62,12 @@ class SqfliteLocalStore extends LocalStore {
       version: _kVersion,
       onCreate: _onCreate,
     );
+  }
+
+  @override
+  Future<void> close() async {
+    await _db?.close();
+    _db = null;
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -69,8 +83,9 @@ class SqfliteLocalStore extends LocalStore {
         estimatedCostUsd REAL
       )
     ''');
+    // Composite index matches the actual ORDER BY (pinned DESC, updatedAt DESC).
     await db.execute(
-      'CREATE INDEX idx_sessions_updated ON $_kTableSessions(updatedAt DESC)',
+      'CREATE INDEX idx_sessions_pinned_updated ON $_kTableSessions(pinned DESC, updatedAt DESC)',
     );
   }
 
@@ -93,10 +108,11 @@ class SqfliteLocalStore extends LocalStore {
   Future<List<Session>> listSessions() async {
     final rows = await _requireDb.query(
       _kTableSessions,
-      // Sort: pinned DESC (1 before 0), then updatedAt DESC.
-      orderBy: 'pinned DESC, updatedAt DESC',
+      // Sort: pinned DESC (1 before 0), then updatedAt DESC, then key ASC for
+      // deterministic tiebreaking when two sessions share the same updatedAt.
+      orderBy: 'pinned DESC, updatedAt DESC, key ASC',
     );
-    return rows.map(_fromRow).toList();
+    return List.unmodifiable(rows.map(_fromRow).toList());
   }
 
   @override
@@ -126,6 +142,8 @@ class SqfliteLocalStore extends LocalStore {
   // -------------------------------------------------------------------------
   // Row <-> Session helpers
   // -------------------------------------------------------------------------
+  // Note: ms-epoch round-tripping (toMillisecondsSinceEpoch / fromMillisecondsSinceEpoch)
+  // is verified by on-device smoke testing (sqflite_common_ffi deliberately dropped; see dbedc19).
 
   static Map<String, Object?> _toRow(Session s) => {
         'key': s.key,
@@ -168,6 +186,11 @@ class InMemoryLocalStore extends LocalStore {
   }
 
   @override
+  Future<void> close() async {
+    _store.clear();
+  }
+
+  @override
   Future<void> upsertSession(Session s) async {
     _store[s.key] = s;
   }
@@ -180,9 +203,12 @@ class InMemoryLocalStore extends LocalStore {
         final pinnedCmp = (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
         if (pinnedCmp != 0) return pinnedCmp;
         // Within each group: newer first.
-        return b.updatedAt.compareTo(a.updatedAt);
+        final timeCmp = b.updatedAt.compareTo(a.updatedAt);
+        if (timeCmp != 0) return timeCmp;
+        // Equal-timestamp tiebreaker: key ASC for deterministic ordering.
+        return a.key.compareTo(b.key);
       });
-    return sessions;
+    return List.unmodifiable(sessions);
   }
 
   @override
