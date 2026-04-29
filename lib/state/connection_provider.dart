@@ -49,3 +49,54 @@ final pairControllerProvider =
     StateNotifierProvider<PairController, AsyncValue<HelloResult?>>(
   (ref) => PairController(ref),
 );
+
+// ---------------------------------------------------------------------------
+// AutoReconnectController — attempts to reconnect on launch using the
+// persisted deviceToken.  State is AsyncValue<bool>:
+//   loading  — attempt in flight
+//   data(true)  — reconnect succeeded (connected)
+//   data(false) — no stored deviceToken, need fresh pair
+//   error(_)    — connect failed
+// ---------------------------------------------------------------------------
+
+class AutoReconnectController extends StateNotifier<AsyncValue<bool>> {
+  AutoReconnectController(this._ref) : super(const AsyncValue.loading()) {
+    _attempt();
+  }
+
+  final Ref _ref;
+
+  Future<void> _attempt() async {
+    final secure = _ref.read(secureStoreProvider);
+    final deviceToken = await secure.read('oc.deviceToken');
+    final wsUrl = await secure.read('oc.wsUrl');
+
+    if (!mounted) return;
+
+    if (deviceToken == null || wsUrl == null) {
+      state = const AsyncValue.data(false);
+      return;
+    }
+
+    try {
+      await _ref.read(gatewayClientProvider).connect(
+            ConnectionConfig(wsUrl: wsUrl, deviceToken: deviceToken),
+          );
+      if (!mounted) return;
+      state = const AsyncValue.data(true);
+    } catch (e, st) {
+      if (!mounted) return;
+      state = AsyncValue.error(e, st);
+    }
+  }
+
+  Future<void> retry() async {
+    state = const AsyncValue.loading();
+    await _attempt();
+  }
+}
+
+final autoReconnectControllerProvider =
+    StateNotifierProvider<AutoReconnectController, AsyncValue<bool>>(
+  (ref) => AutoReconnectController(ref),
+);
