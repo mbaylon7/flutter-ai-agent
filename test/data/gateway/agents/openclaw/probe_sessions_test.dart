@@ -9,7 +9,6 @@ import 'package:stt_tts/core/ids.dart';
 import 'package:stt_tts/data/gateway/agents/openclaw/connect_params.dart';
 import 'package:stt_tts/data/gateway/agents/openclaw/device_proof.dart';
 import 'package:stt_tts/data/gateway/shared/device_identity.dart';
-import 'package:stt_tts/data/gateway/shared/envelope_codec.dart';
 import 'package:stt_tts/data/gateway/shared/ws_connection.dart';
 import 'package:stt_tts/data/secure/secure_store.dart';
 
