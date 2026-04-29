@@ -47,7 +47,9 @@
       "Bash(git commit *)",
       "Bash(flutter pub *)",
       "Bash(flutter analyze *)",
-      "Bash(flutter test *)"
+      "Bash(flutter test *)",
+      "Bash(curl -sf http://127.0.0.1:18789/health -m 3)",
+      "Bash(OPENCLAW_INTEGRATION=1 flutter test --tags integration test/data/gateway/agents/openclaw/openclaw_client_integration_test.dart)"
     ]
   }
 }

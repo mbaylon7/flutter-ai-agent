@@ -32,8 +32,8 @@ class WsConnection {
     _wire();
   }
 
-  factory WsConnection.connect(Uri uri, {Logger? log}) {
-    final ch = IOWebSocketChannel.connect(uri);
+  factory WsConnection.connect(Uri uri, {Logger? log, Map<String, dynamic>? headers}) {
+    final ch = IOWebSocketChannel.connect(uri, headers: headers);
     return WsConnection.test(socket: _IOAdapter(ch), log: log);
   }
 

@@ -48,7 +48,16 @@ class OpenClawGatewayClient implements GatewayClient {
     final identity = await _identityManager.loadOrCreate();
     _instanceId ??= newInstanceId();
 
-    final conn = WsConnection.connect(Uri.parse(config.wsUrl), log: _log);
+    // The gateway enforces an Origin allowlist. Set Origin to the http(s)
+    // form of the gateway URL so it matches the Control UI's host.
+    final wsUri = Uri.parse(config.wsUrl);
+    final originScheme = wsUri.scheme == 'wss' ? 'https' : 'http';
+    final origin = '$originScheme://${wsUri.authority}';
+    final conn = WsConnection.connect(
+      wsUri,
+      log: _log,
+      headers: {'Origin': origin},
+    );
     _conn = conn;
     final rpc = RpcChannel(conn, idGen: newRequestId);
     _rpc = rpc;
