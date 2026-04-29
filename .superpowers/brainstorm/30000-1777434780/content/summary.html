@@ -1,0 +1,142 @@
+<h2>OpenClaw Mobile — UI/UX summary</h2>
+<p class="subtitle">Decisions locked in this brainstorm. Use this to walk your team through what we settled on.</p>
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px;
+    max-width: 980px;
+    margin: 8px auto 0;
+  }
+  .card-mini {
+    background: rgba(120,180,255,.05);
+    border: 1px solid rgba(120,180,255,.12);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .card-mini h3 {
+    margin: 0 0 8px;
+    font-size: 14px; font-weight: 700; color: var(--accent, #6cb0ff);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-mini h3 .num {
+    width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(108,176,255,.15);
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700;
+  }
+  .card-mini .pick {
+    font-size: 13px; color: #e8eeff; font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .card-mini .why {
+    font-size: 11px; color: #8aa3d4; line-height: 1.5;
+  }
+
+  .summary-table {
+    margin-top: 28px;
+    background: rgba(120,180,255,.04);
+    border: 1px solid rgba(120,180,255,.12);
+    border-radius: 14px;
+    padding: 18px 20px;
+    font-size: 13px;
+    color: #d6e2ff;
+    line-height: 1.65;
+    max-width: 720px;
+    margin-left: auto; margin-right: auto;
+  }
+  .summary-table h3 {
+    margin: 0 0 10px; color: #e8eeff; font-size: 14px;
+  }
+  .summary-table ul { padding-left: 22px; margin: 0; }
+  .summary-table strong { color: #e8eeff; }
+
+  .next {
+    margin-top: 22px;
+    text-align: center;
+    font-size: 12px; color: #8aa3d4;
+    max-width: 720px; margin-left: auto; margin-right: auto;
+    line-height: 1.6;
+  }
+  .next strong { color: #e8eeff; }
+</style>
+
+<div class="grid">
+  <div class="card-mini">
+    <h3><span class="num">1</span> Visual vibe</h3>
+    <div class="pick">Dark / Futuristic</div>
+    <div class="why">Deep navy gradient, glowing blue ring, neon waveform. Premium feel, easier on eyes.</div>
+  </div>
+
+  <div class="card-mini">
+    <h3><span class="num">2</span> Navigation</h3>
+    <div class="pick">Voice-first home</div>
+    <div class="why">Mic ring is the hero. Swipe up → chat, swipe right → sessions. Feels like an assistant, not a chat app.</div>
+  </div>
+
+  <div class="card-mini">
+    <h3><span class="num">3</span> Mic in chat</h3>
+    <div class="pick">Mini mic in composer</div>
+    <div class="why">Tap mic anytime in chat = instant voice. Familiar pattern (WhatsApp).</div>
+  </div>
+
+  <div class="card-mini">
+    <h3><span class="num">4</span> Voice states</h3>
+    <div class="pick">Idle · Listening · Thinking · Speaking</div>
+    <div class="why">Four distinct ring/animation states. Live transcript while listening, karaoke highlight while speaking.</div>
+  </div>
+
+  <div class="card-mini">
+    <h3><span class="num">5</span> Sessions list</h3>
+    <div class="pick">Pinned + Recent, with filters</div>
+    <div class="why">Search bar, filter chips (All/Voice/Text/Pinned), voice 🎙 vs text 💬 indicator. Avatar + ⚙ at the bottom.</div>
+  </div>
+
+  <div class="card-mini">
+    <h3><span class="num">6</span> Onboarding</h3>
+    <div class="pick">Sign up · Provision · Ready</div>
+    <div class="why">Welcome → Email/password → "Setting up your AI…" → Start talking. No URLs, no tokens, ever.</div>
+  </div>
+
+  <div class="card-mini">
+    <h3><span class="num">7</span> Settings</h3>
+    <div class="pick">Account-focused, no gateway</div>
+    <div class="why">Profile card, Account (profile/plan/sign out), Privacy (clear cache, delete account), Help. Voice/personality/appearance hidden until they ship.</div>
+  </div>
+
+  <div class="card-mini">
+    <h3><span class="num">8</span> Tool calls</h3>
+    <div class="pick">Collapsed sources pill</div>
+    <div class="why">Quiet "📎 3 sources ▾" line under each AI bubble. Tap → bottom sheet with the list. No noise.</div>
+  </div>
+
+  <div class="card-mini">
+    <h3><span class="num">9</span> Error / empty states</h3>
+    <div class="pick">Plain-words copy</div>
+    <div class="why">First launch greeting, offline banner, "waking up your assistant," mic-denied with deeplink to settings.</div>
+  </div>
+</div>
+
+<div class="summary-table">
+  <h3>What this design assumes</h3>
+  <ul>
+    <li><strong>Audience:</strong> non-techy end users.</li>
+    <li><strong>Hosting model:</strong> each user gets their own OpenClaw, auto-provisioned by your back end.</li>
+    <li><strong>First slice ships:</strong> sign-up + chat mode + sessions + settings shell + the existing speech mode (already in the POC).</li>
+    <li><strong>Wake word, advanced voice mode UI, plugins, themes, tones</strong> — later slices.</li>
+  </ul>
+</div>
+
+<div class="summary-table" style="margin-top: 14px;">
+  <h3>Open dependencies (outside this Flutter project)</h3>
+  <ul>
+    <li>A back-end <strong>provisioning service</strong> (creates per-user OpenClaw containers, handles auth, billing).</li>
+    <li>Decisions on plan tiers, container sleep/wake policy, support contact.</li>
+    <li>Final approval from your superiors on the each-user-own-OpenClaw model.</li>
+  </ul>
+</div>
+
+<div class="next">
+  <strong>Next:</strong> once your superiors confirm the hosting model, we lock the design spec and move to the implementation plan for slice 1.
+</div>

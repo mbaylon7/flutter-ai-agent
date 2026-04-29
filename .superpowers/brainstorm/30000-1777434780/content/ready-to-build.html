@@ -1,0 +1,118 @@
+<h2>Spec is locked. Slice 1 = build &amp; test against your local OpenClaw.</h2>
+
+<style>
+  .lockup {
+    max-width: 720px; margin: 0 auto;
+    background: rgba(120,180,255,.05);
+    border: 1px solid rgba(120,180,255,.15);
+    border-radius: 16px;
+    padding: 22px;
+  }
+  .lockup h3 { margin: 0 0 8px; color: var(--accent, #6cb0ff); font-size: 14px; }
+  .lockup p { font-size: 13px; line-height: 1.6; color: #d6e2ff; margin: 0 0 12px; }
+  .lockup ul { padding-left: 22px; font-size: 13px; line-height: 1.7; color: #d6e2ff; }
+
+  .slice-list {
+    margin-top: 18px;
+    font-size: 12px; line-height: 1.6;
+  }
+  .slice-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(120,180,255,.08);
+  }
+  .slice-row:last-child { border-bottom: none; }
+  .slice-num {
+    width: 26px; height: 26px; border-radius: 8px;
+    background: rgba(108,176,255,.15); color: #6cb0ff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 12px; flex-shrink: 0;
+  }
+  .slice-row.now .slice-num { background: #6cb0ff; color: #0a0e1a; }
+  .slice-mid { flex: 1; min-width: 0; }
+  .slice-title { color: #e8eeff; font-weight: 600; font-size: 13px; }
+  .slice-row.now .slice-title { color: #6cb0ff; }
+  .slice-desc { color: #8aa3d4; font-size: 11px; line-height: 1.5; margin-top: 2px; }
+  .slice-deps { color: #5a6886; font-size: 10px; margin-top: 3px; font-style: italic; }
+</style>
+
+<div class="lockup">
+  <h3>What slice 1 ships</h3>
+  <ul>
+    <li>Restructured Flutter project (current 880-line file → proper layers)</li>
+    <li>Every UI screen we designed — home, chat, sessions, settings, error states</li>
+    <li>Manual pairing onboarding: paste your gateway URL + token (dev-only)</li>
+    <li>Real OpenClaw connection: device-proof signing, streaming chat, sessions, abort</li>
+    <li>Runs against <code style="background:rgba(120,180,255,.1); padding:1px 4px; border-radius:3px;">127.0.0.1:18789</code> on your machine</li>
+  </ul>
+  <p style="margin-top:12px;"><strong>Zero back-end dependencies.</strong> No accounts, no Stripe, no Nanobot/Zeroclaw — those layer on top in slices 2+.</p>
+
+  <h3 style="margin-top:18px;">Slice roadmap</h3>
+  <div class="slice-list">
+    <div class="slice-row now">
+      <div class="slice-num">1</div>
+      <div class="slice-mid">
+        <div class="slice-title">UI scaffolding + OpenClaw end-to-end</div>
+        <div class="slice-desc">All screens · manual pair · OpenClaw connection · streaming chat</div>
+        <div class="slice-deps">No back-end dependency. Builds today.</div>
+      </div>
+    </div>
+    <div class="slice-row">
+      <div class="slice-num">2</div>
+      <div class="slice-mid">
+        <div class="slice-title">Account onboarding + provisioning service</div>
+        <div class="slice-desc">Sign-up / sign-in / "spinning up your assistant"</div>
+        <div class="slice-deps">Blocked on back-end provisioning endpoints.</div>
+      </div>
+    </div>
+    <div class="slice-row">
+      <div class="slice-num">3</div>
+      <div class="slice-mid">
+        <div class="slice-title">Trial + paywall + Stripe + BYO</div>
+        <div class="slice-desc">7-day trial, payment, BYO agent setup screen</div>
+        <div class="slice-deps">Blocked on Stripe + back-end billing endpoints.</div>
+      </div>
+    </div>
+    <div class="slice-row">
+      <div class="slice-num">4</div>
+      <div class="slice-mid">
+        <div class="slice-title">Speech Mode v2</div>
+        <div class="slice-desc">Polished voice UI states, subtitles, karaoke highlight, voice interrupts</div>
+      </div>
+    </div>
+    <div class="slice-row">
+      <div class="slice-num">5</div>
+      <div class="slice-mid">
+        <div class="slice-title">Nanobot agent</div>
+        <div class="slice-desc">Drop in 2nd <code>GatewayClient</code> impl</div>
+        <div class="slice-deps">Blocked on Nanobot back-end completing.</div>
+      </div>
+    </div>
+    <div class="slice-row">
+      <div class="slice-num">6</div>
+      <div class="slice-mid">
+        <div class="slice-title">Zeroclaw agent</div>
+        <div class="slice-desc">Drop in 3rd <code>GatewayClient</code> impl</div>
+        <div class="slice-deps">Blocked on Zeroclaw back-end completing.</div>
+      </div>
+    </div>
+    <div class="slice-row">
+      <div class="slice-num">7</div>
+      <div class="slice-mid">
+        <div class="slice-title">Wake word + commands UX</div>
+        <div class="slice-desc">"Hi OpenClaw" via Picovoice, slash commands, skills</div>
+      </div>
+    </div>
+    <div class="slice-row">
+      <div class="slice-num">8</div>
+      <div class="slice-mid">
+        <div class="slice-title">Polish + launch readiness</div>
+        <div class="slice-desc">Themes, multi-language, accessibility, app icon, store listings</div>
+      </div>
+    </div>
+  </div>
+
+  <p style="margin-top:18px; padding: 12px; background: rgba(108,176,255,.08); border-radius: 10px; border-left: 3px solid #6cb0ff;">
+    <strong>Next step:</strong> write the implementation plan for slice 1 — concrete tasks, in order, that a Flutter developer (or me) can pick up and execute.
+  </p>
+</div>

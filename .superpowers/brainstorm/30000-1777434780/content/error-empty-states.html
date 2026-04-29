@@ -1,0 +1,202 @@
+<h2>Step 9 — Error &amp; empty states</h2>
+<p class="subtitle">The four moments where something's not normal. All in plain words.</p>
+
+<style>
+  .row {
+    display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+    margin-top: 8px;
+  }
+  .phone-card { display:flex; flex-direction:column; align-items:center; }
+  .phone {
+    width: 220px; height: 460px;
+    border-radius: 30px; overflow: hidden; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    border: 4px solid #111;
+    background: #0a0e1a;
+    color: #d6e2ff;
+    font-family: -apple-system, system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  .topbar {
+    height: 40px; flex-shrink: 0;
+    display:flex; align-items:center; gap:8px;
+    padding: 0 12px;
+    border-bottom: 1px solid rgba(120,180,255,.10);
+    font-size: 12px;
+  }
+  .topbar .icon { width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(120,180,255,.15); display:flex; align-items:center;
+    justify-content:center; font-size:13px; color:#8aa3d4; }
+  .topbar .title { font-weight: 600; color:#e8eeff; flex:1; text-align:center;
+    margin-right: 22px; font-size: 11px; }
+
+  .body {
+    flex: 1; padding: 16px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center;
+    position: relative;
+  }
+
+  .icon-big {
+    width: 76px; height: 76px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px;
+    margin-bottom: 18px;
+  }
+
+  .title-big {
+    font-size: 16px; font-weight: 700; color:#e8eeff;
+    line-height: 1.3; margin-bottom: 8px;
+  }
+  .desc {
+    font-size: 12px; color:#8aa3d4; line-height: 1.55;
+    padding: 0 6px;
+    max-width: 200px;
+  }
+  .cta {
+    width: 100%; padding: 11px 14px;
+    background: #6cb0ff; color: #0a0e1a;
+    border-radius: 12px; font-weight: 700; font-size: 12px;
+    text-align: center;
+    margin-top: 18px;
+    box-sizing: border-box;
+  }
+  .cta-sub {
+    font-size: 11px; color:#8aa3d4; margin-top: 12px;
+  }
+  .cta-sub a { color: #6cb0ff; }
+
+  /* 1. Empty (first launch) */
+  .empty .icon-big {
+    background: rgba(108,176,255,.12);
+    color: #6cb0ff;
+  }
+
+  /* 2. Offline */
+  .offline .icon-big {
+    background: rgba(255,180,80,.12);
+    color: #ffb86c;
+  }
+  .offline-banner {
+    position: absolute; top: 0; left: 0; right: 0;
+    background: rgba(255,180,80,.18);
+    color: #ffb86c;
+    font-size: 10px; font-weight: 600;
+    padding: 6px 12px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255,180,80,.25);
+  }
+
+  /* 3. Waking up */
+  .waking .icon-big {
+    border: 3px dashed rgba(108,176,255,.5);
+    background: transparent;
+    color: #6cb0ff;
+    animation: spin 3s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 4. Mic denied */
+  .denied .icon-big {
+    background: rgba(255,122,133,.12);
+    color: #ff7a85;
+  }
+
+  .frame-label {
+    margin-top: 12px; font-size: 13px; font-weight: 600;
+    color: #e8eeff;
+  }
+  .frame-when {
+    font-size: 11px; color: #8aa3d4;
+    text-align: center; max-width: 200px;
+    line-height: 1.45; margin-top: 4px;
+  }
+</style>
+
+<div class="row">
+
+  <!-- 1. Empty / first launch -->
+  <div class="phone-card">
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">OpenClaw</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body empty">
+        <div class="icon-big">👋</div>
+        <div class="title-big">Hi Marvin</div>
+        <div class="desc">Your assistant is ready. Tap below and say something — or type if you'd rather.</div>
+        <div class="cta">Tap to talk</div>
+        <div class="cta-sub">or <a>start typing</a></div>
+      </div>
+    </div>
+    <div class="frame-label">1 — First launch / empty</div>
+    <div class="frame-when">No conversations yet. Friendly nudge to start.</div>
+  </div>
+
+  <!-- 2. Offline -->
+  <div class="phone-card">
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">Refactor pricing flow</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body offline">
+        <div class="offline-banner">⚡ No internet — trying to reconnect…</div>
+        <div class="icon-big">📡</div>
+        <div class="title-big">You're offline</div>
+        <div class="desc">We'll pick back up the moment you're connected. Old conversations stay readable.</div>
+        <div class="cta-sub">Last seen: 2 minutes ago</div>
+      </div>
+    </div>
+    <div class="frame-label">2 — Offline</div>
+    <div class="frame-when">Phone has no internet. Banner stays visible across screens.</div>
+  </div>
+
+  <!-- 3. AI waking up -->
+  <div class="phone-card">
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">OpenClaw</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body waking">
+        <div class="icon-big">⚙</div>
+        <div class="title-big">Waking up your assistant</div>
+        <div class="desc">It went to sleep to save power. This usually takes 10–15 seconds.</div>
+      </div>
+    </div>
+    <div class="frame-label">3 — AI waking up</div>
+    <div class="frame-when">Container was idle and shut down. First open after a long pause.</div>
+  </div>
+
+  <!-- 4. Mic permission denied -->
+  <div class="phone-card">
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">OpenClaw</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body denied">
+        <div class="icon-big">🎙</div>
+        <div class="title-big">Microphone is off</div>
+        <div class="desc">To talk, OpenClaw needs the microphone. You can turn it on in your phone's settings.</div>
+        <div class="cta">Open Settings</div>
+        <div class="cta-sub">or <a>type instead</a></div>
+      </div>
+    </div>
+    <div class="frame-label">4 — Mic permission denied</div>
+    <div class="frame-when">User said no to the mic prompt. Speech mode shows this.</div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:28px; text-align:center;">
+  Four states — empty, offline, waking up, mic denied. Plain words, no error codes, no jargon.<br/>
+  Look right? Anything to add (e.g., "session deleted on another device," "session limit reached")?
+</p>

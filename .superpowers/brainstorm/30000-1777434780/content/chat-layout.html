@@ -1,0 +1,199 @@
+<h2>Step 3 — Where does the mic go in chat mode?</h2>
+<p class="subtitle">You picked voice-first home. When the user swipes up to type, the mic has to go somewhere.</p>
+
+<style>
+  .phone {
+    width: 250px; height: 500px;
+    border-radius: 32px; overflow: hidden; margin: 0 auto; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    border: 4px solid #111;
+    background: radial-gradient(circle at 50% 25%, #1c2a4a 0%, #0a0e1a 70%);
+    color: #d6e2ff;
+    font-family: -apple-system, system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  .topbar {
+    height: 44px; display: flex; align-items: center;
+    padding: 0 14px; gap: 8px; font-size: 12px;
+    border-bottom: 1px solid rgba(120,180,255,.10);
+    flex-shrink: 0;
+  }
+  .topbar .icon { width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(120,180,255,.15); display:flex; align-items:center;
+    justify-content:center; font-size:13px; color:#8aa3d4; }
+  .topbar .title { font-weight: 600; color: #e8eeff; flex:1; text-align:center;
+    margin-right: 22px; }
+
+  .body { flex: 1; padding: 12px; overflow: hidden; position: relative; }
+  .bubble-u { background: #6cb0ff; color: #0a0e1a; padding: 8px 10px;
+    border-radius: 12px; font-size: 11px; max-width: 75%; margin-left:auto;
+    margin-bottom: 8px; }
+  .bubble-a { background: rgba(120,180,255,.10); border:1px solid rgba(120,180,255,.18);
+    color: #d6e2ff; padding: 8px 10px; border-radius: 12px; font-size: 11px;
+    max-width: 80%; margin-bottom: 8px; }
+
+  /* Composer & mini mic — option A & B */
+  .composer-row {
+    display:flex; align-items:center; gap:8px;
+    padding: 10px 12px; flex-shrink: 0;
+    border-top: 1px solid rgba(120,180,255,.10);
+    background: rgba(120,180,255,.04);
+  }
+  .composer-input {
+    flex: 1; background: rgba(255,255,255,.05);
+    border: 1px solid rgba(120,180,255,.15);
+    border-radius: 18px; padding: 9px 12px;
+    font-size: 11px; color: #8aa3d4;
+  }
+  .send-btn { width: 32px; height: 32px; border-radius: 50%;
+    background: #6cb0ff; color:#0a0e1a;
+    display:flex; align-items:center; justify-content:center; font-size: 14px; }
+
+  .mini-mic {
+    width: 36px; height: 36px; border-radius:50%;
+    border: 1.5px solid rgba(120,180,255,.7);
+    box-shadow: 0 0 12px rgba(80,140,255,.45);
+    background:#0e1424;
+    color: #6cb0ff;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 16px; flex-shrink: 0;
+  }
+
+  /* Floating mic (option C) */
+  .floating-mic {
+    position: absolute; right: 14px; bottom: 14px;
+    width: 56px; height: 56px; border-radius: 50%;
+    border: 2px solid rgba(120,180,255,.7);
+    box-shadow: 0 0 18px rgba(80,140,255,.5),
+                inset 0 0 12px rgba(80,140,255,.3);
+    background: #0e1424; color: #6cb0ff;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 22px; z-index: 5;
+  }
+
+  .down-hint {
+    position:absolute; top: 6px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; color: #5a6886; display:flex; flex-direction:column;
+    align-items:center; gap: 2px;
+  }
+
+  .pros-cons-mini { font-size: 12px; line-height: 1.5; }
+  .pros-cons-mini .ok { color: #6cb0ff; }
+  .pros-cons-mini .meh { color: #d97a7a; }
+</style>
+
+<div class="cards">
+  <!-- Option A: full replace -->
+  <div class="card" data-choice="full-replace" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="topbar">
+          <div class="icon">≡</div>
+          <div class="title">Refactor pricing flow</div>
+          <div class="icon">⚙</div>
+        </div>
+        <div class="body">
+          <div class="down-hint">
+            <div>▾</div>
+            <div>swipe down for mic</div>
+          </div>
+          <div style="margin-top:18px;">
+            <div class="bubble-a">Sure — what's the current flow look like?</div>
+            <div class="bubble-u">Three steps. Cart → ship → pay.</div>
+            <div class="bubble-a">Got it. Two collapses safely…</div>
+            <div class="bubble-u">Show me a sketch.</div>
+          </div>
+        </div>
+        <div class="composer-row">
+          <div class="composer-input">Type a message…</div>
+          <div class="send-btn">↑</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Full replace</h3>
+      <p class="pros-cons-mini">
+        <span class="ok">+ chat gets all the room — easy reading</span><br/>
+        <span class="ok">+ cleanest visual</span><br/>
+        <span class="meh">– to talk, you have to swipe down first</span><br/>
+        <span class="meh">– no quick "switch back to voice" affordance</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- Option B: composer with mini mic -->
+  <div class="card" data-choice="mini-mic-row" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="topbar">
+          <div class="icon">≡</div>
+          <div class="title">Refactor pricing flow</div>
+          <div class="icon">⚙</div>
+        </div>
+        <div class="body">
+          <div style="margin-top:8px;">
+            <div class="bubble-a">Sure — what's the current flow look like?</div>
+            <div class="bubble-u">Three steps. Cart → ship → pay.</div>
+            <div class="bubble-a">Got it. Two collapses safely…</div>
+            <div class="bubble-u">Show me a sketch.</div>
+          </div>
+        </div>
+        <div class="composer-row">
+          <div class="mini-mic">🎙</div>
+          <div class="composer-input">Type a message…</div>
+          <div class="send-btn">↑</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Mini mic in composer</h3>
+      <p class="pros-cons-mini">
+        <span class="ok">+ tap mic = instant voice, no swipe needed</span><br/>
+        <span class="ok">+ familiar pattern (WhatsApp, Telegram)</span><br/>
+        <span class="meh">– mic is small, less of a "hero"</span><br/>
+        <span class="meh">– eats a bit of horizontal space on the input</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- Option C: floating mic -->
+  <div class="card" data-choice="floating" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="topbar">
+          <div class="icon">≡</div>
+          <div class="title">Refactor pricing flow</div>
+          <div class="icon">⚙</div>
+        </div>
+        <div class="body">
+          <div style="margin-top:8px;">
+            <div class="bubble-a">Sure — what's the current flow look like?</div>
+            <div class="bubble-u">Three steps. Cart → ship → pay.</div>
+            <div class="bubble-a">Got it. Two collapses safely…</div>
+            <div class="bubble-u">Show me a sketch.</div>
+            <div class="bubble-a">One sec — drawing it now.</div>
+          </div>
+          <div class="floating-mic">🎙</div>
+        </div>
+        <div class="composer-row">
+          <div class="composer-input" style="flex:1; margin-right:60px;">Type a message…</div>
+          <div class="send-btn">↑</div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Floating mic over chat</h3>
+      <p class="pros-cons-mini">
+        <span class="ok">+ mic stays the hero — always visible</span><br/>
+        <span class="ok">+ tap to talk anytime, no swipe</span><br/>
+        <span class="meh">– floats over content, can cover bubbles</span><br/>
+        <span class="meh">– harder on smaller screens</span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px; text-align:center;">
+  My pick is <strong>B</strong> — keeps voice one tap away in chat without floating UI getting in the way. <strong>C</strong> is bolder if you want the mic to feel inescapable.
+</p>

@@ -1,0 +1,272 @@
+<h2>Step 4 — The four voice states</h2>
+<p class="subtitle">Same home screen, four moments. Tell me if anything feels off, or tap to confirm.</p>
+
+<style>
+  .row {
+    display: flex; gap: 14px; flex-wrap: wrap; justify-content: center;
+    margin-top: 8px;
+  }
+  .phone-card { display:flex; flex-direction:column; align-items:center; }
+  .phone {
+    width: 220px; height: 440px;
+    border-radius: 28px; overflow: hidden; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    border: 4px solid #111;
+    background: radial-gradient(circle at 50% 25%, #1c2a4a 0%, #0a0e1a 70%);
+    color: #d6e2ff;
+    font-family: -apple-system, system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  .topbar {
+    height: 40px; display: flex; align-items: center;
+    padding: 0 12px; gap: 8px; font-size: 12px;
+    flex-shrink: 0;
+  }
+  .topbar .icon { width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(120,180,255,.15); display:flex; align-items:center;
+    justify-content:center; font-size:13px; color:#8aa3d4; }
+  .topbar .title { font-weight: 600; color: #e8eeff; flex:1; text-align:center;
+    margin-right: 22px; font-size: 11px; }
+  .body {
+    flex: 1; display:flex; flex-direction:column;
+    align-items:center; justify-content:center;
+    padding: 0 16px; box-sizing: border-box; position:relative;
+  }
+
+  .ring {
+    width: 120px; height: 120px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    margin-bottom: 16px;
+  }
+  .ring-inner {
+    width: 84px; height: 84px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 26px;
+  }
+
+  /* Idle */
+  .ring-idle {
+    border: 2px solid rgba(120,180,255,.4);
+  }
+  .ring-idle .ring-inner {
+    background:#0e1424; color:#6cb0ff;
+    border: 1px solid rgba(120,180,255,.4);
+  }
+
+  /* Listening — pulsing/glowing, larger ring */
+  .ring-listen {
+    border: 3px solid rgba(120,180,255,.85);
+    box-shadow: 0 0 32px rgba(80,140,255,.7), inset 0 0 18px rgba(80,140,255,.4);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%,100% { transform: scale(1); }
+    50% { transform: scale(1.06); }
+  }
+  .ring-listen .ring-inner {
+    background:#0e1424; color:#6cb0ff;
+    border: 1px solid rgba(120,180,255,.55);
+    box-shadow: 0 0 18px rgba(80,140,255,.5);
+  }
+
+  /* Processing — broken ring, rotating dots */
+  .ring-process {
+    border: 2px dashed rgba(120,180,255,.5);
+    animation: rotate 2.5s linear infinite;
+  }
+  @keyframes rotate { to { transform: rotate(360deg); } }
+  .ring-process .ring-inner {
+    background:#0e1424; color:#6cb0ff;
+    border: 1px solid rgba(120,180,255,.4);
+    animation: rotate 2.5s linear infinite reverse;
+  }
+
+  /* Responding — solid ring, gentle glow, calmer */
+  .ring-respond {
+    border: 3px solid #6cb0ff;
+    box-shadow: 0 0 24px rgba(108,176,255,.55);
+  }
+  .ring-respond .ring-inner {
+    background:#6cb0ff; color:#0a0e1a;
+    box-shadow: 0 0 14px rgba(108,176,255,.5);
+  }
+
+  .status {
+    font-size: 13px; font-weight: 600; color: #e8eeff;
+    margin-bottom: 6px; text-align:center;
+  }
+  .status-sub {
+    font-size: 10px; color: #8aa3d4; text-align: center;
+    line-height: 1.4;
+  }
+
+  .wave {
+    display:flex; gap:3px; align-items:end;
+    height: 28px; margin-top: 16px;
+  }
+  .wave > span {
+    width: 3px; border-radius: 2px;
+    background: #6cb0ff; box-shadow: 0 0 4px #4a90ff;
+  }
+  .wave-flat > span { background: rgba(120,180,255,.25); box-shadow:none; }
+
+  .transcript {
+    margin-top: 12px;
+    font-size: 11px; color: #d6e2ff;
+    text-align: center; line-height: 1.4;
+    padding: 0 8px;
+    min-height: 28px;
+  }
+  .transcript .light { color: #5a6886; }
+
+  .subtitle-line {
+    margin-top: 12px;
+    font-size: 11px; line-height: 1.45;
+    text-align: center; color: #d6e2ff;
+    padding: 0 12px;
+  }
+  .subtitle-line .said { color: #6cb0ff; }
+  .subtitle-line .now { color: #fff; background: rgba(108,176,255,.25);
+    padding: 1px 3px; border-radius: 3px; }
+  .subtitle-line .next { color: #5a6886; }
+
+  .interrupt-hint {
+    position: absolute; bottom: 14px; left:0; right:0;
+    text-align:center; font-size: 10px; color: #8aa3d4;
+  }
+
+  .swipe {
+    position:absolute; bottom: 8px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px; color: #5a6886;
+    display:flex; flex-direction:column; align-items:center;
+  }
+
+  .dots span { display: inline-block; width: 6px; height: 6px;
+    border-radius:50%; background:#6cb0ff; margin: 0 2px;
+    animation: blink 1.2s infinite ease-in-out; }
+  .dots span:nth-child(2) { animation-delay: .2s; }
+  .dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink {
+    0%, 100% { opacity: .3; }
+    50% { opacity: 1; }
+  }
+
+  .state-label {
+    margin-top: 12px; font-size: 13px; font-weight: 600;
+    color: #e8eeff;
+  }
+  .state-desc {
+    font-size: 11px; color: #8aa3d4; max-width: 220px;
+    text-align: center; line-height: 1.5; margin-top: 4px;
+  }
+</style>
+
+<div class="row">
+
+  <!-- 1. IDLE -->
+  <div class="phone-card">
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">OpenClaw</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body">
+        <div class="ring ring-idle"><div class="ring-inner">🎙</div></div>
+        <div class="status">Tap to talk</div>
+        <div class="status-sub">or say <em>"Hi OpenClaw"</em></div>
+        <div class="wave wave-flat">
+          <span style="height:6%"></span><span style="height:10%"></span>
+          <span style="height:8%"></span><span style="height:12%"></span>
+          <span style="height:6%"></span><span style="height:10%"></span>
+          <span style="height:8%"></span><span style="height:12%"></span>
+          <span style="height:6%"></span><span style="height:10%"></span>
+        </div>
+        <div class="swipe">↑ swipe up to type</div>
+      </div>
+    </div>
+    <div class="state-label">1 — Idle</div>
+    <div class="state-desc">Calm. Soft ring. Wave bars flat. Wake word listens (if enabled).</div>
+  </div>
+
+  <!-- 2. LISTENING -->
+  <div class="phone-card">
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">OpenClaw</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body">
+        <div class="ring ring-listen"><div class="ring-inner">🎙</div></div>
+        <div class="status">Listening…</div>
+        <div class="status-sub">Tap to stop</div>
+        <div class="wave">
+          <span style="height:30%"></span><span style="height:60%"></span>
+          <span style="height:85%"></span><span style="height:95%"></span>
+          <span style="height:70%"></span><span style="height:50%"></span>
+          <span style="height:40%"></span><span style="height:65%"></span>
+          <span style="height:88%"></span><span style="height:55%"></span>
+        </div>
+        <div class="transcript">
+          <span>Refactor the pricing flow into</span>
+          <span class="light"> two…</span>
+        </div>
+      </div>
+    </div>
+    <div class="state-label">2 — Listening</div>
+    <div class="state-desc">Ring pulses, glow brightens. Live waveform. Partial transcript shows what we're hearing.</div>
+  </div>
+
+  <!-- 3. PROCESSING -->
+  <div class="phone-card">
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">OpenClaw</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body">
+        <div class="ring ring-process"><div class="ring-inner">⋯</div></div>
+        <div class="status">Thinking</div>
+        <div class="dots" style="margin-top:6px;">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="transcript" style="margin-top:18px;">
+          <span class="light">"Refactor the pricing flow into two steps."</span>
+        </div>
+      </div>
+    </div>
+    <div class="state-label">3 — Processing</div>
+    <div class="state-desc">Ring becomes a slow rotating dashed circle. Three dots. Heard text fades to gray below.</div>
+  </div>
+
+  <!-- 4. RESPONDING -->
+  <div class="phone-card">
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">OpenClaw</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body">
+        <div class="ring ring-respond"><div class="ring-inner">🔊</div></div>
+        <div class="status">Speaking</div>
+        <div class="status-sub">Tap to stop · say "Repeat"</div>
+        <div class="subtitle-line">
+          <span class="said">Sure — start by</span>
+          <span class="now">collapsing</span>
+          <span class="next"> cart and shipping into one screen…</span>
+        </div>
+      </div>
+    </div>
+    <div class="state-label">4 — Responding</div>
+    <div class="state-desc">Solid bright ring with speaker icon. Subtitle reads as it speaks, current word highlighted.</div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:28px; text-align:center;">
+  Look right? Anything to tweak — copy, animation feel, color of the highlight, etc.? Click any phone to confirm, or just tell me.
+</p>

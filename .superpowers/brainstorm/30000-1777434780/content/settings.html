@@ -1,0 +1,299 @@
+<h2>Step 7 — Settings screen</h2>
+<p class="subtitle">Everything organized in clear sections. Slice 1 ships the gateway block; the rest fills in across slices 2–5 (greyed labels show what's later).</p>
+
+<style>
+  .stage { display: flex; gap: 32px; align-items: flex-start; justify-content: center; flex-wrap: wrap; }
+
+  .phone {
+    width: 280px; height: 600px;
+    border-radius: 32px; overflow: hidden; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    border: 4px solid #111;
+    background: #0a0e1a;
+    color: #d6e2ff;
+    font-family: -apple-system, system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  .topbar {
+    height: 48px; flex-shrink: 0;
+    display:flex; align-items:center; gap:8px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(120,180,255,.10);
+  }
+  .topbar .back { color:#8aa3d4; font-size:18px; }
+  .topbar .title { font-weight: 700; color: #e8eeff; flex:1; font-size: 14px; }
+
+  .scroll { flex: 1; overflow-y: auto;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+  .section-label {
+    font-size: 10px; font-weight: 700;
+    color: #5a6886;
+    text-transform: uppercase; letter-spacing: 0.7px;
+    padding: 16px 16px 6px;
+  }
+  .section-label.later::after {
+    content: " · slice 2+";
+    color: #3d4760; font-weight: 500; font-size: 9px;
+    letter-spacing: 0.5px;
+  }
+
+  .group {
+    margin: 0 12px;
+    background: rgba(120,180,255,.04);
+    border: 1px solid rgba(120,180,255,.10);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .group.later { opacity: 0.55; }
+
+  .row {
+    display: flex; align-items: center; gap: 11px;
+    padding: 12px 12px;
+    border-bottom: 1px solid rgba(120,180,255,.08);
+  }
+  .row:last-child { border-bottom: none; }
+  .row-ico {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: rgba(120,180,255,.10);
+    color: #8aa3d4;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 14px; flex-shrink: 0;
+  }
+  .row-mid { flex: 1; min-width: 0; }
+  .row-title {
+    font-size: 13px; color:#e8eeff; font-weight: 500;
+  }
+  .row-sub {
+    font-size: 11px; color:#8aa3d4; margin-top: 2px;
+    line-height: 1.35;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .row-action {
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: #8aa3d4;
+  }
+  .row-action .chevron { color: #5a6886; font-size: 14px; }
+  .row-action .value { color: #6cb0ff; font-weight: 500; }
+
+  /* Toggle */
+  .toggle {
+    width: 36px; height: 20px; border-radius: 12px;
+    background: rgba(120,180,255,.15);
+    position: relative; flex-shrink: 0;
+  }
+  .toggle.on { background: #6cb0ff; }
+  .toggle::after {
+    content: ''; position: absolute;
+    top: 2px; left: 2px;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #e8eeff;
+    transition: left .15s;
+  }
+  .toggle.on::after { left: 18px; background: #0a0e1a; }
+
+  /* Status pill */
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(50,200,120,.15);
+    color: #5cd99a;
+    padding: 2px 8px; border-radius: 10px;
+    font-size: 10px; font-weight: 600;
+  }
+  .pill .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #5cd99a;
+    box-shadow: 0 0 6px #5cd99a;
+  }
+
+  .danger { color: #ff7a85 !important; }
+
+  .footer-hint {
+    text-align: center;
+    padding: 24px 16px;
+    font-size: 10px; color: #3d4760;
+    line-height: 1.5;
+  }
+
+  .legend {
+    font-size: 12px; color: #8aa3d4; line-height: 1.55;
+    max-width: 260px; margin-top: 20px;
+  }
+  .legend strong { color: #e8eeff; }
+</style>
+
+<div class="stage">
+
+  <div class="phone">
+    <div class="topbar">
+      <div class="back">‹</div>
+      <div class="title">Settings</div>
+    </div>
+
+    <div class="scroll">
+
+      <!-- Gateway -->
+      <div class="section-label">Gateway</div>
+      <div class="group">
+        <div class="row">
+          <div class="row-ico">🛰</div>
+          <div class="row-mid">
+            <div class="row-title">Connection</div>
+            <div class="row-sub">192.168.1.10:18789</div>
+          </div>
+          <div class="pill"><span class="dot"></span>Live</div>
+        </div>
+        <div class="row">
+          <div class="row-ico">📱</div>
+          <div class="row-mid">
+            <div class="row-title">This device</div>
+            <div class="row-sub">Marvin's Pixel · ID d8a4…7f2c</div>
+          </div>
+          <div class="row-action"><div class="chevron">›</div></div>
+        </div>
+        <div class="row">
+          <div class="row-ico">🔄</div>
+          <div class="row-mid">
+            <div class="row-title">Rotate device token</div>
+            <div class="row-sub">Last rotated: 2 days ago</div>
+          </div>
+          <div class="row-action"><div class="chevron">›</div></div>
+        </div>
+      </div>
+
+      <!-- Voice & speech -->
+      <div class="section-label later">Voice &amp; speech</div>
+      <div class="group later">
+        <div class="row">
+          <div class="row-ico">🗣</div>
+          <div class="row-mid">
+            <div class="row-title">Voice</div>
+            <div class="row-sub">Google · en-US Studio-O</div>
+          </div>
+          <div class="row-action"><div class="chevron">›</div></div>
+        </div>
+        <div class="row">
+          <div class="row-ico">⏱</div>
+          <div class="row-mid">
+            <div class="row-title">Speech rate</div>
+            <div class="row-sub">Normal</div>
+          </div>
+          <div class="row-action"><div class="value">0.56×</div><div class="chevron">›</div></div>
+        </div>
+        <div class="row">
+          <div class="row-ico">👂</div>
+          <div class="row-mid">
+            <div class="row-title">Wake word</div>
+            <div class="row-sub">"Hi OpenClaw" — uses extra battery</div>
+          </div>
+          <div class="toggle"></div>
+        </div>
+        <div class="row">
+          <div class="row-ico">🌐</div>
+          <div class="row-mid">
+            <div class="row-title">Language</div>
+            <div class="row-sub">Speech recognition + TTS</div>
+          </div>
+          <div class="row-action"><div class="value">English (US)</div><div class="chevron">›</div></div>
+        </div>
+      </div>
+
+      <!-- Personality -->
+      <div class="section-label later">Personality</div>
+      <div class="group later">
+        <div class="row">
+          <div class="row-ico">💬</div>
+          <div class="row-mid">
+            <div class="row-title">Tone</div>
+            <div class="row-sub">How replies are phrased</div>
+          </div>
+          <div class="row-action"><div class="value">Casual</div><div class="chevron">›</div></div>
+        </div>
+        <div class="row">
+          <div class="row-ico">🎭</div>
+          <div class="row-mid">
+            <div class="row-title">Identity</div>
+            <div class="row-sub">From IDENTITY.md on the gateway</div>
+          </div>
+          <div class="row-action"><div class="chevron">›</div></div>
+        </div>
+      </div>
+
+      <!-- Appearance -->
+      <div class="section-label later">Appearance</div>
+      <div class="group later">
+        <div class="row">
+          <div class="row-ico">🎨</div>
+          <div class="row-mid">
+            <div class="row-title">Theme</div>
+            <div class="row-sub">Dark / Light / System</div>
+          </div>
+          <div class="row-action"><div class="value">Dark</div><div class="chevron">›</div></div>
+        </div>
+        <div class="row">
+          <div class="row-ico">🇵🇭</div>
+          <div class="row-mid">
+            <div class="row-title">App language</div>
+            <div class="row-sub">Interface text</div>
+          </div>
+          <div class="row-action"><div class="value">English</div><div class="chevron">›</div></div>
+        </div>
+      </div>
+
+      <!-- Privacy -->
+      <div class="section-label">Privacy &amp; data</div>
+      <div class="group">
+        <div class="row">
+          <div class="row-ico">🗑</div>
+          <div class="row-mid">
+            <div class="row-title">Clear local cache</div>
+            <div class="row-sub">Sessions list and previews on this phone</div>
+          </div>
+          <div class="row-action"><div class="chevron">›</div></div>
+        </div>
+        <div class="row">
+          <div class="row-ico danger">⛔</div>
+          <div class="row-mid">
+            <div class="row-title danger">Unpair this device</div>
+            <div class="row-sub">Revokes the device token. You'll need to pair again.</div>
+          </div>
+          <div class="row-action"><div class="chevron">›</div></div>
+        </div>
+      </div>
+
+      <!-- About -->
+      <div class="section-label">About</div>
+      <div class="group">
+        <div class="row">
+          <div class="row-ico">ⓘ</div>
+          <div class="row-mid">
+            <div class="row-title">Version</div>
+            <div class="row-sub">App 1.0.0 · Gateway 2026.4.11</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer-hint">
+        Made for personal OpenClaw deploys.<br/>
+        Hi, Marvin 👋
+      </div>
+
+    </div>
+  </div>
+
+  <div class="legend">
+    <p><strong>What's grouped where</strong></p>
+    <p style="margin-top:10px;"><strong>Gateway</strong> — connection status, this device, rotate token. Always-on in slice 1.</p>
+    <p><strong>Voice &amp; speech</strong> — voice picker, speech rate, wake word, language. Slice 2 (rate, language) and slice 3 (wake word).</p>
+    <p><strong>Personality</strong> — tone, identity. Slice 5.</p>
+    <p><strong>Appearance</strong> — theme, app language. Slice 5.</p>
+    <p><strong>Privacy</strong> — clear cache, unpair. Slice 1.</p>
+    <p><strong>About</strong> — versions. Slice 1.</p>
+    <p style="margin-top:14px;">Greyed-out groups are visible in slice 1 but their toggles do nothing yet — placeholder so the layout's stable when features land later. Want me to <em>hide</em> them in slice 1 instead?</p>
+  </div>
+
+</div>

@@ -1,0 +1,229 @@
+<h2>Step 2 — How does the app lay out?</h2>
+<p class="subtitle">All three use the dark vibe. The difference is how you move between sessions, chat, speech, and settings.</p>
+
+<style>
+  .phone {
+    width: 250px; height: 500px;
+    border-radius: 32px; overflow: hidden; margin: 0 auto; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    border: 4px solid #111;
+    background: radial-gradient(circle at 50% 25%, #1c2a4a 0%, #0a0e1a 70%);
+    color: #d6e2ff;
+    font-family: -apple-system, system-ui, sans-serif;
+  }
+  .topbar {
+    height: 44px; display: flex; align-items: center;
+    padding: 0 14px; gap: 8px; font-size: 13px;
+    border-bottom: 1px solid rgba(120,180,255,.12);
+  }
+  .topbar .icon { width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(120,180,255,.15); display:flex; align-items:center;
+    justify-content:center; font-size:14px; color:#8aa3d4; }
+  .topbar .title { font-weight: 600; color: #e8eeff; }
+  .topbar .spacer { flex: 1; }
+  .pill-toggle {
+    display:flex; gap:0; background: rgba(120,180,255,.12);
+    border-radius: 14px; padding: 2px; font-size:11px; font-weight:600;
+  }
+  .pill-toggle > div { padding: 4px 10px; border-radius: 12px; color:#8aa3d4; }
+  .pill-toggle > .on { background:#6cb0ff; color:#0a0e1a; }
+
+  .body { flex: 1; padding: 12px; overflow:hidden; }
+  .bubble-u { background: #6cb0ff; color: #0a0e1a; padding: 8px 10px;
+    border-radius: 12px; font-size: 11px; max-width: 75%; margin-left:auto;
+    margin-bottom: 8px; }
+  .bubble-a { background: rgba(120,180,255,.10); border:1px solid rgba(120,180,255,.18);
+    color: #d6e2ff; padding: 8px 10px; border-radius: 12px; font-size: 11px;
+    max-width: 80%; margin-bottom: 8px; }
+
+  .composer {
+    height: 50px; display:flex; align-items:center; gap:8px;
+    padding: 0 12px; background: rgba(120,180,255,.06);
+    border-top: 1px solid rgba(120,180,255,.12);
+  }
+  .composer .input { flex:1; background:rgba(255,255,255,.05);
+    border-radius: 16px; padding: 8px 12px; font-size: 11px; color:#8aa3d4;
+    border: 1px solid rgba(120,180,255,.15); }
+  .composer .send { width: 32px; height: 32px; border-radius:50%;
+    background:#6cb0ff; color:#0a0e1a; display:flex; align-items:center;
+    justify-content:center; font-size:14px; }
+
+  /* Bottom nav (option 1) */
+  .bottom-nav {
+    height: 54px; display:flex; align-items:center; justify-content:space-around;
+    background: #07091a; border-top: 1px solid rgba(120,180,255,.12);
+  }
+  .bottom-nav .item { display:flex; flex-direction:column; align-items:center;
+    font-size:9px; color:#5a6886; gap:2px; }
+  .bottom-nav .item.on { color:#6cb0ff; }
+  .bottom-nav .item .ico { font-size: 18px; }
+
+  /* Drawer hint (option 2) */
+  .drawer-overlay { position: absolute; left:0; top:44px; bottom:0;
+    width: 75%; background:#0d1326; border-right:1px solid rgba(120,180,255,.18);
+    padding: 12px; box-sizing:border-box; }
+  .drawer-overlay .session { padding:8px 10px; border-radius:8px; font-size:11px;
+    color:#d6e2ff; margin-bottom:4px; }
+  .drawer-overlay .session.on { background: rgba(120,180,255,.15); }
+  .drawer-overlay .label { font-size:9px; color:#5a6886; text-transform:uppercase;
+    letter-spacing: 0.6px; padding: 6px 10px; }
+  .drawer-overlay .footer { position:absolute; bottom:14px; left:14px; right:14px;
+    border-top: 1px solid rgba(120,180,255,.12); padding-top: 10px;
+    display:flex; justify-content:space-between; font-size:11px; color:#8aa3d4; }
+
+  /* Voice-first (option 3) — large mic centered, swipe hints */
+  .ring {
+    width: 130px; height: 130px; border-radius:50%;
+    border: 2px solid rgba(120,180,255,.7);
+    box-shadow: 0 0 28px rgba(80,140,255,.55), inset 0 0 18px rgba(80,140,255,.35);
+    display:flex; align-items:center; justify-content:center; margin:30px auto 16px;
+  }
+  .ring-inner {
+    width: 90px; height: 90px; border-radius:50%;
+    background:#0e1424; color:#6cb0ff;
+    border: 1px solid rgba(120,180,255,.5);
+    box-shadow: 0 0 16px rgba(80,140,255,.45);
+    display:flex; align-items:center; justify-content:center;
+    font-size: 28px;
+  }
+  .swipe-hint {
+    position:absolute; font-size: 10px; color:#5a6886;
+    display:flex; align-items:center; gap:4px;
+  }
+
+  .col { display:flex; flex-direction:column; height:100%; }
+
+  .pros-cons-mini { font-size: 12px; line-height: 1.45; }
+  .pros-cons-mini .ok { color: #6cb0ff; }
+  .pros-cons-mini .meh { color: #d97a7a; }
+</style>
+
+<div class="cards">
+  <!-- Option 1: bottom nav -->
+  <div class="card" data-choice="bottom-nav" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="col">
+          <div class="topbar">
+            <div class="icon">⌂</div>
+            <div class="title">Refactor pricing flow</div>
+            <div class="spacer"></div>
+            <div class="icon">⋯</div>
+          </div>
+          <div class="body" style="flex:1; overflow:hidden;">
+            <div class="bubble-a">Sure — what's the current flow look like?</div>
+            <div class="bubble-u">Three steps. Cart → ship → pay.</div>
+            <div class="bubble-a">Got it. We could collapse that to two…</div>
+          </div>
+          <div class="composer">
+            <div class="input">Type a message…</div>
+            <div class="send">↑</div>
+          </div>
+          <div class="bottom-nav">
+            <div class="item on"><div class="ico">💬</div>Chat</div>
+            <div class="item"><div class="ico">🎙</div>Speech</div>
+            <div class="item"><div class="ico">≡</div>Sessions</div>
+            <div class="item"><div class="ico">⚙</div>Settings</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>1 — Bottom tabs</h3>
+      <p class="pros-cons-mini">
+        <span class="ok">+ familiar (Gmail, Slack, etc.)</span><br/>
+        <span class="ok">+ everything one tap away</span><br/>
+        <span class="meh">– eats vertical space on the chat screen</span><br/>
+        <span class="meh">– feels generic, less assistant-like</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- Option 2: drawer -->
+  <div class="card" data-choice="drawer" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="col">
+          <div class="topbar">
+            <div class="icon">≡</div>
+            <div class="title">Refactor pricing flow</div>
+            <div class="spacer"></div>
+            <div class="pill-toggle">
+              <div class="on">Chat</div>
+              <div>🎙</div>
+            </div>
+          </div>
+          <div class="body" style="flex:1; overflow:hidden; position:relative;">
+            <div class="bubble-a">Sure — what's the current flow look like?</div>
+            <div class="bubble-u">Three steps. Cart → ship → pay.</div>
+            <div class="bubble-a">Got it. We could collapse…</div>
+            <div class="drawer-overlay">
+              <div class="label">Pinned</div>
+              <div class="session on">📌 Refactor pricing flow</div>
+              <div class="label">Recent</div>
+              <div class="session">Trip planning ideas</div>
+              <div class="session">Bug in build script</div>
+              <div class="session">Rust vs Go thoughts</div>
+              <div class="footer">⚙ Settings <span>+ New</span></div>
+            </div>
+          </div>
+          <div class="composer">
+            <div class="input">Type a message…</div>
+            <div class="send">↑</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>2 — Side drawer + header toggle</h3>
+      <p class="pros-cons-mini">
+        <span class="ok">+ chat takes the whole screen</span><br/>
+        <span class="ok">+ mode toggle is one tap, in the header</span><br/>
+        <span class="ok">+ scales nicely to tablets (drawer becomes fixed)</span><br/>
+        <span class="meh">– sessions are one extra swipe away</span>
+      </p>
+    </div>
+  </div>
+
+  <!-- Option 3: voice-first home -->
+  <div class="card" data-choice="voice-first" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="col">
+          <div class="topbar">
+            <div class="icon">≡</div>
+            <div class="title">OpenClaw</div>
+            <div class="spacer"></div>
+            <div class="icon">⚙</div>
+          </div>
+          <div class="body" style="flex:1; overflow:hidden; position:relative; text-align:center;">
+            <div class="ring"><div class="ring-inner">🎙</div></div>
+            <div style="font-size: 13px; color:#e8eeff; margin-bottom:4px;">Tap to talk</div>
+            <div style="font-size: 10px; color:#5a6886;">or say "Hi OpenClaw"</div>
+            <div class="swipe-hint" style="left:50%; bottom:10px; transform:translateX(-50%); flex-direction:column;">
+              <div>↑</div>
+              <div>swipe up for chat</div>
+            </div>
+            <div class="swipe-hint" style="left:6px; top:50%; transform:translateY(-50%); flex-direction:column;">
+              <div>→</div>
+              <div style="writing-mode:vertical-rl;">sessions</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>3 — Voice-first home</h3>
+      <p class="pros-cons-mini">
+        <span class="ok">+ mic is the hero — fastest "tap and talk"</span><br/>
+        <span class="ok">+ feels like a real assistant, not a chat app</span><br/>
+        <span class="meh">– chat lives one swipe away (extra friction)</span><br/>
+        <span class="meh">– less familiar pattern to users</span>
+      </p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px; text-align:center;">
+  Tap a card or tell me. My pick is <strong>2</strong> — it scales to tablets and the chat screen feels biggest, but 3 is bolder if you want assistant-first.
+</p>

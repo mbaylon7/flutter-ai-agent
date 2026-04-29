@@ -1,0 +1,239 @@
+<h2>Step 8 — Tool calls in chat</h2>
+<p class="subtitle">When the AI runs something behind the scenes, the user sees a small pill — collapsed by default, tap to expand.</p>
+
+<style>
+  .stage { display:flex; gap: 28px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  .phone {
+    width: 280px; height: 580px;
+    border-radius: 32px; overflow: hidden; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    border: 4px solid #111;
+    background: #0a0e1a;
+    color: #d6e2ff;
+    font-family: -apple-system, system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+
+  .topbar {
+    height: 44px; flex-shrink: 0;
+    display:flex; align-items:center; gap:8px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(120,180,255,.10);
+    font-size: 12px;
+  }
+  .topbar .icon { width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(120,180,255,.15); display:flex; align-items:center;
+    justify-content:center; font-size:13px; color:#8aa3d4; }
+  .topbar .title { font-weight: 600; color:#e8eeff; flex:1; text-align:center;
+    margin-right: 22px; font-size: 12px; }
+
+  .body {
+    flex: 1; padding: 12px;
+    overflow-y: auto;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .body::-webkit-scrollbar { display: none; width: 0; }
+
+  .bubble-u { background: #6cb0ff; color: #0a0e1a; padding: 8px 11px;
+    border-radius: 14px; font-size: 12px; max-width: 75%; margin-left:auto;
+    margin-bottom: 10px; line-height: 1.4; }
+  .bubble-a { background: rgba(120,180,255,.10);
+    border:1px solid rgba(120,180,255,.18);
+    color: #d6e2ff; padding: 9px 11px; border-radius: 14px;
+    font-size: 12px; max-width: 85%; margin-bottom: 6px; line-height: 1.45; }
+
+  /* Tool pill — collapsed */
+  .tool-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(120,180,255,.06);
+    border: 1px solid rgba(120,180,255,.18);
+    color: #8aa3d4;
+    padding: 5px 10px;
+    border-radius: 10px;
+    font-size: 11px;
+    margin-bottom: 6px;
+    max-width: 85%;
+  }
+  .tool-pill .ico { color: #6cb0ff; font-size: 12px; }
+  .tool-pill .arrow { color: #5a6886; font-size: 10px; margin-left: 2px; }
+  .tool-pill.fail {
+    background: rgba(255,122,133,.08);
+    border-color: rgba(255,122,133,.25);
+    color: #ff9aa3;
+  }
+  .tool-pill.fail .ico { color: #ff7a85; }
+  .tool-pill.running {
+    background: rgba(108,176,255,.10);
+    border-color: rgba(108,176,255,.3);
+    color: #6cb0ff;
+  }
+  .tool-pill.running .ico::before {
+    content: "⋯"; animation: blink 1s infinite;
+  }
+  @keyframes blink { 0%,100% { opacity:.4; } 50% { opacity:1; } }
+
+  /* Tool pill — expanded */
+  .tool-expand {
+    background: rgba(120,180,255,.04);
+    border: 1px solid rgba(120,180,255,.18);
+    border-radius: 12px;
+    padding: 10px;
+    margin-bottom: 8px;
+    max-width: 90%;
+  }
+  .tool-expand .head {
+    display:flex; align-items:center; gap: 6px;
+    font-size: 11px; color: #6cb0ff; margin-bottom: 8px;
+  }
+  .tool-expand .head .ico { font-size: 12px; }
+  .tool-expand .head .arrow { margin-left: auto; color: #5a6886; }
+  .tool-expand .label {
+    font-size: 9px; font-weight: 700; color: #5a6886;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-top: 6px; margin-bottom: 3px;
+  }
+  .tool-expand .content {
+    font-size: 11px; color:#d6e2ff;
+    background: rgba(0,0,0,.25);
+    border-radius: 6px; padding: 6px 8px;
+    font-family: 'SF Mono', monospace;
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+  .tool-expand .show-more {
+    font-size: 10px; color: #6cb0ff;
+    margin-top: 4px;
+  }
+
+  .legend {
+    font-size: 12px; color: #8aa3d4; line-height: 1.65;
+    max-width: 280px; margin-top: 24px;
+  }
+  .legend strong { color: #e8eeff; }
+  .legend .key {
+    display:inline-block; padding: 1px 6px;
+    background: rgba(120,180,255,.10);
+    border-radius: 4px; color: #6cb0ff; font-size: 11px;
+  }
+
+  .frame-label { margin-top: 12px; font-size: 13px; font-weight: 600; color:#e8eeff; text-align:center; }
+</style>
+
+<div class="stage">
+
+  <!-- Phone 1: collapsed pills (default) -->
+  <div>
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">Refactor pricing flow</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body">
+
+        <div class="bubble-u">What does the current pricing page say?</div>
+
+        <!-- Single tool, completed -->
+        <div class="tool-pill">
+          <span class="ico">🌐</span>
+          <span>Read pricing.example.com</span>
+          <span class="arrow">▾</span>
+        </div>
+        <div class="bubble-a">Three tiers: Starter at $9, Pro at $29, Team at $79. Each lists 5–7 features.</div>
+
+        <div class="bubble-u">Find similar competitors and compare.</div>
+
+        <!-- Currently running -->
+        <div class="tool-pill running">
+          <span class="ico"></span>
+          <span>Searching the web…</span>
+        </div>
+
+        <!-- Multiple tools stacked -->
+        <div class="tool-pill">
+          <span class="ico">🔍</span>
+          <span>Searched: "saas pricing models"</span>
+          <span class="arrow">▾</span>
+        </div>
+        <div class="tool-pill">
+          <span class="ico">🌐</span>
+          <span>Read 4 pages</span>
+          <span class="arrow">▾</span>
+        </div>
+        <div class="tool-pill fail">
+          <span class="ico">⚠</span>
+          <span>Couldn't reach competitor3.com</span>
+          <span class="arrow">▾</span>
+        </div>
+        <div class="bubble-a">Looked at 3 of the 4 — they all use 3-tier with the middle as "most popular."</div>
+
+      </div>
+    </div>
+    <div class="frame-label">Default: collapsed pills</div>
+  </div>
+
+  <!-- Phone 2: expanded pill -->
+  <div>
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">Refactor pricing flow</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body">
+
+        <div class="bubble-u">Find similar competitors and compare.</div>
+
+        <div class="tool-pill">
+          <span class="ico">🔍</span>
+          <span>Searched: "saas pricing models"</span>
+          <span class="arrow">▾</span>
+        </div>
+
+        <!-- This one is expanded -->
+        <div class="tool-expand">
+          <div class="head">
+            <span class="ico">🌐</span>
+            <span>Read 4 pages</span>
+            <span class="arrow">▴</span>
+          </div>
+          <div class="label">Pages</div>
+          <div class="content">competitor1.com/pricing
+competitor2.io/plans
+competitor3.com/pricing
+competitor4.app/pricing</div>
+          <div class="label">Result</div>
+          <div class="content">3 of 4 succeeded.
+Found 3-tier structure (Starter / Pro / Team).
+Avg price points: $12 / $35 / $89.</div>
+          <div class="show-more">Show full output →</div>
+        </div>
+
+        <div class="tool-pill fail">
+          <span class="ico">⚠</span>
+          <span>Couldn't reach competitor3.com</span>
+          <span class="arrow">▾</span>
+        </div>
+
+        <div class="bubble-a">Looked at 3 of the 4. The pattern is consistent: 3 tiers with the middle as "most popular." Want me to mock up a layout?</div>
+
+      </div>
+    </div>
+    <div class="frame-label">Tap pill → expanded</div>
+  </div>
+
+  <div class="legend">
+    <p><strong>Rules</strong></p>
+    <ul style="padding-left:18px; margin-top:6px;">
+      <li>Pills are <strong>between</strong> user and AI bubbles, not inside them.</li>
+      <li>While running: <span class="key">⋯ Searching the web…</span> with a soft pulse.</li>
+      <li>Done: <span class="key">🌐 Read 4 pages ▾</span> · tap to expand.</li>
+      <li>Failed: red border, plain explanation. Doesn't break the chat.</li>
+      <li>Multiple tool calls stack vertically in the order they ran.</li>
+    </ul>
+    <p style="margin-top:14px;">Plain words on the pills, never raw function names ("searched the web," not "<code>web.search()</code>").</p>
+    <p style="margin-top:14px;">Look right? Anything to tweak?</p>
+  </div>
+
+</div>

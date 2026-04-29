@@ -1,0 +1,161 @@
+<h2>Step 1 — Pick the overall vibe</h2>
+<p class="subtitle">This sets the mood for every screen. Tap one. We can iterate after.</p>
+
+<style>
+  .phone {
+    width: 240px;
+    height: 480px;
+    border-radius: 32px;
+    overflow: hidden;
+    margin: 0 auto;
+    position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.25);
+    border: 4px solid #111;
+  }
+  .phone-inner {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 24px 16px; box-sizing: border-box;
+    position: relative;
+  }
+  .ring {
+    width: 130px; height: 130px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 22px;
+  }
+  .ring-inner {
+    width: 90px; height: 90px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 32px;
+  }
+  .wave {
+    display: flex; gap: 3px; align-items: end;
+    height: 36px; margin-top: 18px;
+  }
+  .wave > span { width: 4px; border-radius: 2px; display: block; }
+  .label-row { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+  .hint { font-size: 11px; opacity: .8; }
+
+  /* A — Warm (current POC) */
+  .vibe-a {
+    background: linear-gradient(160deg, #E8614D 0%, #F4A68F 35%, #FCDDD4 70%, #F9F0EE 100%);
+    color: #fff;
+  }
+  .vibe-a .ring { border: 4px solid rgba(255,255,255,.55); }
+  .vibe-a .ring-inner { background:#fff; color:#E8614D; }
+  .vibe-a .wave > span { background: rgba(255,255,255,.85); }
+
+  /* B — Dark / Futuristic */
+  .vibe-b {
+    background: radial-gradient(circle at 50% 35%, #1c2a4a 0%, #0a0e1a 70%);
+    color: #d6e2ff;
+  }
+  .vibe-b .ring {
+    border: 2px solid rgba(120,180,255,.7);
+    box-shadow: 0 0 28px rgba(80,140,255,.55), inset 0 0 18px rgba(80,140,255,.35);
+  }
+  .vibe-b .ring-inner {
+    background: #0e1424;
+    color: #6cb0ff;
+    border: 1px solid rgba(120,180,255,.5);
+    box-shadow: 0 0 16px rgba(80,140,255,.45);
+  }
+  .vibe-b .wave > span { background: #6cb0ff; box-shadow: 0 0 6px #4a90ff; }
+
+  /* C — Minimal / Calm */
+  .vibe-c {
+    background: #f6f7f9;
+    color: #2a2d34;
+  }
+  .vibe-c .ring { border: 1.5px solid #d6dae0; }
+  .vibe-c .ring-inner { background: #2a2d34; color: #fff; }
+  .vibe-c .wave > span { background: #2a2d34; }
+
+  .vibe-cap {
+    text-align: center;
+    margin-top: 12px;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+</style>
+
+<div class="cards">
+  <div class="card" data-choice="warm" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="phone-inner vibe-a">
+          <div class="ring"><div class="ring-inner">🎙</div></div>
+          <div class="label-row">Listening…</div>
+          <div class="hint">Tap to stop</div>
+          <div class="wave">
+            <span style="height:30%"></span><span style="height:55%"></span>
+            <span style="height:80%"></span><span style="height:95%"></span>
+            <span style="height:70%"></span><span style="height:50%"></span>
+            <span style="height:35%"></span><span style="height:60%"></span>
+            <span style="height:85%"></span><span style="height:70%"></span>
+            <span style="height:45%"></span><span style="height:25%"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Warm (current)</h3>
+      <p>Coral gradient. Approachable, human, personal-assistant feel. This is what your POC looks like today.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="dark" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="phone-inner vibe-b">
+          <div class="ring"><div class="ring-inner">🎙</div></div>
+          <div class="label-row">Listening…</div>
+          <div class="hint" style="color:#8aa3d4">Tap to stop</div>
+          <div class="wave">
+            <span style="height:25%"></span><span style="height:50%"></span>
+            <span style="height:75%"></span><span style="height:90%"></span>
+            <span style="height:65%"></span><span style="height:45%"></span>
+            <span style="height:30%"></span><span style="height:55%"></span>
+            <span style="height:80%"></span><span style="height:65%"></span>
+            <span style="height:40%"></span><span style="height:20%"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Dark / Futuristic</h3>
+      <p>Deep blue, glowing ring, neon waveform. Smart-assistant vibe. Easier on eyes at night, premium feel.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="minimal" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:16px; background:#1a1a1a;">
+      <div class="phone">
+        <div class="phone-inner vibe-c">
+          <div class="ring"><div class="ring-inner">🎙</div></div>
+          <div class="label-row">Listening…</div>
+          <div class="hint" style="color:#8a8e95">Tap to stop</div>
+          <div class="wave">
+            <span style="height:30%"></span><span style="height:55%"></span>
+            <span style="height:80%"></span><span style="height:95%"></span>
+            <span style="height:70%"></span><span style="height:50%"></span>
+            <span style="height:35%"></span><span style="height:60%"></span>
+            <span style="height:85%"></span><span style="height:70%"></span>
+            <span style="height:45%"></span><span style="height:25%"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Minimal / Calm</h3>
+      <p>Light, muted, professional. Like a tool you use for work. Quiet personality, no visual noise.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px; text-align:center;">
+  Tap your pick (or tell me in chat). We can also blend — like A's warmth with C's spacing.
+</p>

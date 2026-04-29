@@ -1,0 +1,260 @@
+<h2>Step 8 (v3) — Sources collapsed, modal on tap</h2>
+<p class="subtitle">Single tappable line under the bubble. Tap → bottom sheet with the full list.</p>
+
+<style>
+  .stage { display:flex; gap: 28px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+
+  .phone {
+    width: 280px; height: 580px;
+    border-radius: 32px; overflow: hidden; position: relative;
+    box-shadow: 0 12px 40px rgba(0,0,0,.3);
+    border: 4px solid #111;
+    background: #0a0e1a;
+    color: #d6e2ff;
+    font-family: -apple-system, system-ui, sans-serif;
+    display: flex; flex-direction: column;
+  }
+  .topbar {
+    height: 44px; flex-shrink: 0;
+    display:flex; align-items:center; gap:8px;
+    padding: 0 14px;
+    border-bottom: 1px solid rgba(120,180,255,.10);
+    font-size: 12px;
+  }
+  .topbar .icon { width: 22px; height: 22px; border-radius: 6px;
+    background: rgba(120,180,255,.15); display:flex; align-items:center;
+    justify-content:center; font-size:13px; color:#8aa3d4; }
+  .topbar .title { font-weight: 600; color:#e8eeff; flex:1; text-align:center;
+    margin-right: 22px; font-size: 12px; }
+
+  .body {
+    flex: 1; padding: 12px;
+    overflow-y: auto;
+    scrollbar-width: none; -ms-overflow-style: none;
+    position: relative;
+  }
+  .body::-webkit-scrollbar { display: none; width: 0; }
+
+  .bubble-u { background: #6cb0ff; color: #0a0e1a; padding: 8px 11px;
+    border-radius: 14px; font-size: 12px; max-width: 75%; margin-left:auto;
+    margin-bottom: 12px; line-height: 1.4; }
+
+  .bubble-a-wrap { max-width: 88%; margin-bottom: 14px; }
+
+  .bubble-a { background: rgba(120,180,255,.10);
+    border:1px solid rgba(120,180,255,.18);
+    color: #d6e2ff; padding: 9px 11px; border-radius: 14px;
+    font-size: 12px; line-height: 1.45; }
+
+  /* Collapsed sources line */
+  .sources-toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 6px; margin-left: 4px;
+    background: rgba(120,180,255,.08);
+    border: 1px solid rgba(120,180,255,.16);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-size: 11px; color: #8aa3d4;
+    cursor: pointer;
+  }
+  .sources-toggle .ico { color: #6cb0ff; font-size: 11px; }
+  .sources-toggle .arrow { color: #5a6886; font-size: 9px; }
+
+  /* Working state */
+  .working {
+    display: inline-flex; align-items: center; gap: 6px;
+    color: #6cb0ff;
+    font-size: 11px;
+    padding: 6px 10px;
+    margin-bottom: 12px;
+  }
+  .working .dots span {
+    display: inline-block; width: 4px; height: 4px;
+    border-radius: 50%; background: #6cb0ff;
+    margin: 0 1px;
+    animation: blink 1.2s infinite ease-in-out;
+  }
+  .working .dots span:nth-child(2) { animation-delay: .2s; }
+  .working .dots span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,100% { opacity:.3; } 50% { opacity:1; } }
+
+  /* Modal scrim + bottom sheet */
+  .scrim {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,.55);
+    z-index: 5;
+    backdrop-filter: blur(2px);
+  }
+  .sheet {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    background: #0e1424;
+    border-top: 1px solid rgba(120,180,255,.18);
+    border-radius: 18px 18px 0 0;
+    padding: 14px 16px 22px;
+    z-index: 6;
+    box-shadow: 0 -8px 24px rgba(0,0,0,.4);
+  }
+  .sheet .grabber {
+    width: 36px; height: 4px; border-radius: 2px;
+    background: rgba(120,180,255,.25);
+    margin: 0 auto 12px;
+  }
+  .sheet h3 {
+    font-size: 13px; font-weight: 700; color: #e8eeff;
+    margin: 0 0 10px;
+  }
+
+  .source-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 8px;
+    border-radius: 10px;
+    margin-bottom: 4px;
+    background: rgba(120,180,255,.04);
+    border: 1px solid rgba(120,180,255,.10);
+  }
+  .source-row .ico {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: rgba(108,176,255,.15); color: #6cb0ff;
+    display:flex; align-items:center; justify-content:center;
+    font-size: 13px; flex-shrink: 0;
+  }
+  .source-row .info { flex: 1; min-width: 0; }
+  .source-row .title {
+    font-size: 12px; color:#e8eeff;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .source-row .domain {
+    font-size: 10px; color:#8aa3d4; margin-top: 2px;
+  }
+  .source-row .open {
+    color: #5a6886; font-size: 14px; flex-shrink: 0;
+  }
+
+  .legend {
+    font-size: 12px; color: #8aa3d4; line-height: 1.65;
+    max-width: 280px; margin-top: 24px;
+  }
+  .legend strong { color: #e8eeff; }
+  .legend ul { padding-left: 18px; margin-top: 6px; }
+
+  .frame-label { margin-top: 12px; font-size: 13px; font-weight: 600; color:#e8eeff; text-align:center; }
+</style>
+
+<div class="stage">
+
+  <!-- Phone 1: collapsed -->
+  <div>
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">Refactor pricing flow</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body">
+
+        <div class="bubble-u">What does the current pricing page say?</div>
+
+        <div class="bubble-a-wrap">
+          <div class="bubble-a">Three tiers: Starter at $9, Pro at $29, Team at $79. Each lists 5–7 features.</div>
+          <div class="sources-toggle">
+            <span class="ico">📎</span>
+            <span>1 source</span>
+            <span class="arrow">▾</span>
+          </div>
+        </div>
+
+        <div class="bubble-u">Find similar competitors and compare.</div>
+
+        <div class="working">
+          <span>Looking it up</span>
+          <span class="dots"><span></span><span></span><span></span></span>
+        </div>
+
+        <div class="bubble-a-wrap">
+          <div class="bubble-a">All three use the same 3-tier shape, with the middle tier marked as "most popular." Average prices: $12 / $35 / $89.</div>
+          <div class="sources-toggle">
+            <span class="ico">📎</span>
+            <span>3 sources</span>
+            <span class="arrow">▾</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="frame-label">Default — collapsed line</div>
+  </div>
+
+  <!-- Phone 2: modal opened -->
+  <div>
+    <div class="phone">
+      <div class="topbar">
+        <div class="icon">≡</div>
+        <div class="title">Refactor pricing flow</div>
+        <div class="icon">⚙</div>
+      </div>
+      <div class="body">
+
+        <div class="bubble-u">Find similar competitors and compare.</div>
+
+        <div class="bubble-a-wrap">
+          <div class="bubble-a">All three use the same 3-tier shape, with the middle tier marked as "most popular." Average prices: $12 / $35 / $89.</div>
+          <div class="sources-toggle">
+            <span class="ico">📎</span>
+            <span>3 sources</span>
+            <span class="arrow">▾</span>
+          </div>
+        </div>
+
+        <div class="scrim"></div>
+
+        <div class="sheet">
+          <div class="grabber"></div>
+          <h3>Sources</h3>
+
+          <div class="source-row">
+            <div class="ico">🌐</div>
+            <div class="info">
+              <div class="title">SaaS pricing patterns 2026</div>
+              <div class="domain">competitor1.com</div>
+            </div>
+            <div class="open">↗</div>
+          </div>
+
+          <div class="source-row">
+            <div class="ico">🌐</div>
+            <div class="info">
+              <div class="title">Plans &amp; pricing</div>
+              <div class="domain">competitor2.io</div>
+            </div>
+            <div class="open">↗</div>
+          </div>
+
+          <div class="source-row">
+            <div class="ico">🌐</div>
+            <div class="info">
+              <div class="title">Pricing — Plans for every team</div>
+              <div class="domain">competitor4.app</div>
+            </div>
+            <div class="open">↗</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+    <div class="frame-label">Tap "3 sources" → bottom sheet</div>
+  </div>
+
+  <div class="legend">
+    <p><strong>How it works</strong></p>
+    <ul>
+      <li>One pill under the bubble: <em>"3 sources ▾"</em>.</li>
+      <li>Tap → bottom sheet slides up with the list (title + domain).</li>
+      <li>Tap a row → opens that source in the browser.</li>
+      <li>Drag down or tap outside → closes the sheet.</li>
+      <li>If 0 sources used, no pill shown.</li>
+    </ul>
+
+    <p style="margin-top:14px;">Look right?</p>
+  </div>
+
+</div>
