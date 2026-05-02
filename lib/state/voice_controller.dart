@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/data/voice/stt_service.dart';
 import 'package:stt_tts/data/voice/tts_service.dart';
+import 'package:stt_tts/data/voice/voice_command_detector.dart';
 import 'package:stt_tts/data/voice/voice_coordinator.dart';
 import 'package:stt_tts/domain/markdown/strip_markdown.dart';
 import 'package:stt_tts/domain/models/message.dart';
@@ -60,6 +61,16 @@ class VoiceController {
   StreamSubscription<List<Message>>? _messagesSub;
   StreamSubscription<SttTranscript>? _transcriptSub;
   StreamSubscription<TtsStatus>? _ttsStatusSub;
+
+  /// Voice command detector — runs a low-priority STT loop during TTS
+  /// playback to detect Stop/Repeat/Cancel keywords.
+  /// This is the documented exception to the STT/TTS mutual-exclusion rule.
+  final _detector = VoiceCommandDetector();
+  StreamSubscription<VoiceCommand>? _detectorSub;
+
+  /// The plain text most recently passed to tts.speak(), used to re-speak on
+  /// a `repeat` voice command.
+  String? _lastSpokenText;
 
   Future<void> tapMic() async {
     final state = _ref.read(voiceStateProvider.notifier);
@@ -128,12 +139,38 @@ class VoiceController {
       final text = _plainText(last);
       if (text.isEmpty) return;
 
+      _lastSpokenText = stripMarkdown(text);
       state.aiBeganSpeaking();
-      await coord.speak(begin: () => tts.speak(stripMarkdown(text)));
+      await coord.speak(begin: () => tts.speak(_lastSpokenText!));
     });
 
-    _ttsStatusSub ??= tts.status.listen((s) {
-      if (s == TtsStatus.idle && _ref.read(voiceStateProvider) == VoiceState.responding) {
+    _ttsStatusSub ??= tts.status.listen((s) async {
+      if (s == TtsStatus.speaking) {
+        await _detector.start();
+        await _detectorSub?.cancel();
+        _detectorSub = _detector.events.listen((cmd) async {
+          final ttsLocal = _ref.read(ttsServiceProvider);
+          final stateLocal = _ref.read(voiceStateProvider.notifier);
+          switch (cmd) {
+            case VoiceCommand.stop:
+              await ttsLocal.stop();
+              stateLocal.interrupt();
+            case VoiceCommand.cancel:
+              // TODO(voice): also abort the in-flight ChatRepository request
+              // once we hold a cancellable reference (run id / CancelToken).
+              await ttsLocal.stop();
+              stateLocal.interrupt();
+            case VoiceCommand.repeat:
+              if (_lastSpokenText != null) {
+                await ttsLocal.speak(_lastSpokenText!);
+              }
+          }
+        });
+      } else if (s == TtsStatus.idle &&
+          _ref.read(voiceStateProvider) == VoiceState.responding) {
+        await _detector.stop();
+        await _detectorSub?.cancel();
+        _detectorSub = null;
         state.aiDoneSpeaking();
       }
     });
@@ -154,6 +191,9 @@ class VoiceController {
     _messagesSub?.cancel();
     _transcriptSub?.cancel();
     _ttsStatusSub?.cancel();
+    _detectorSub?.cancel();
+    // ignore: discarded_futures — fire-and-forget on dispose.
+    _detector.stop();
   }
 }
 
