@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/theme.dart';
+import 'package:stt_tts/data/permissions/permissions.dart';
 import 'package:stt_tts/data/voice/stt_service.dart';
 import 'package:stt_tts/data/voice/tts_service.dart';
 import 'package:stt_tts/state/settings_provider.dart';
@@ -12,6 +13,7 @@ import 'package:stt_tts/state/wake_word_provider.dart';
 import 'package:stt_tts/ui/chat/chat_screen.dart';
 import 'package:stt_tts/ui/speech/state_ring.dart';
 import 'package:stt_tts/ui/speech/transcript_strip.dart';
+import 'package:stt_tts/ui/states/mic_denied_state.dart';
 import 'package:stt_tts/ui/widgets/voice_visualizer.dart';
 
 /// Voice-first home screen for one session.
@@ -27,7 +29,10 @@ class VoiceHome extends ConsumerStatefulWidget {
   ConsumerState<VoiceHome> createState() => _VoiceHomeState();
 }
 
-class _VoiceHomeState extends ConsumerState<VoiceHome> {
+class _VoiceHomeState extends ConsumerState<VoiceHome>
+    with WidgetsBindingObserver {
+  MicPermissionState? _micState; // null = not yet checked
+
   String _liveTranscript = '';
   String _spokenLine = '';
   int? _hlStart;
@@ -43,6 +48,7 @@ class _VoiceHomeState extends ConsumerState<VoiceHome> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final stt = ref.read(sttServiceProvider);
     final tts = ref.read(ttsServiceProvider);
 
@@ -91,10 +97,14 @@ class _VoiceHomeState extends ConsumerState<VoiceHome> {
       settingsProvider.select((s) => s.wakeWordEnabled),
       (prev, next) => unawaited(wakeCtrl.sync(speechModeVisible: true)),
     );
+
+    // Check mic permission so we can swap to MicDeniedState if needed.
+    unawaited(_checkMic());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _transcriptSub?.cancel();
     _levelSub?.cancel();
     _progressSub?.cancel();
@@ -102,6 +112,19 @@ class _VoiceHomeState extends ConsumerState<VoiceHome> {
     _wakeWordSub?.cancel();
     unawaited(ref.read(wakeWordControllerProvider).sync(speechModeVisible: false));
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_checkMic());
+    }
+  }
+
+  Future<void> _checkMic() async {
+    final s = await MicPermission().check();
+    if (!mounted) return;
+    setState(() => _micState = s);
   }
 
   String _statusLabel(VoiceState s) => switch (s) {
@@ -134,6 +157,20 @@ class _VoiceHomeState extends ConsumerState<VoiceHome> {
   Widget build(BuildContext context) {
     final vstate = ref.watch(voiceStateProvider);
     final controller = ref.read(voiceControllerProvider(widget.sessionKey));
+
+    if (_micState == MicPermissionState.denied ||
+        _micState == MicPermissionState.permanentlyDenied) {
+      return MicDeniedState(
+        onTypeInstead: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => Scaffold(
+              appBar: AppBar(title: const Text('Chat')),
+              body: const ChatScreen(),
+            ),
+          ),
+        ),
+      );
+    }
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
