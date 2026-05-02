@@ -1,0 +1,184 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stt_tts/core/theme.dart';
+import 'package:stt_tts/data/voice/stt_service.dart';
+import 'package:stt_tts/data/voice/tts_service.dart';
+import 'package:stt_tts/state/voice_controller.dart';
+import 'package:stt_tts/state/voice_provider.dart';
+import 'package:stt_tts/ui/chat/chat_screen.dart';
+import 'package:stt_tts/ui/speech/state_ring.dart';
+import 'package:stt_tts/ui/speech/transcript_strip.dart';
+import 'package:stt_tts/ui/widgets/voice_visualizer.dart';
+
+/// Voice-first home screen for one session.
+///
+/// - Mic ring (StateRing) at center, driven by VoiceStateMachine.
+/// - Live partial transcript (listening) or karaoke subtitle (responding).
+/// - Swipe up → ChatScreen for the same session.
+class VoiceHome extends ConsumerStatefulWidget {
+  const VoiceHome({super.key, required this.sessionKey});
+  final String sessionKey;
+
+  @override
+  ConsumerState<VoiceHome> createState() => _VoiceHomeState();
+}
+
+class _VoiceHomeState extends ConsumerState<VoiceHome> {
+  String _liveTranscript = '';
+  String _spokenLine = '';
+  int? _hlStart;
+  int? _hlEnd;
+  double _level = 0;
+
+  StreamSubscription<SttTranscript>? _transcriptSub;
+  StreamSubscription<double>? _levelSub;
+  StreamSubscription<TtsProgress>? _progressSub;
+  StreamSubscription<TtsStatus>? _ttsStatusSub;
+
+  @override
+  void initState() {
+    super.initState();
+    final stt = ref.read(sttServiceProvider);
+    final tts = ref.read(ttsServiceProvider);
+
+    _transcriptSub = stt.transcript.listen((t) {
+      if (!mounted) return;
+      setState(() => _liveTranscript = t.text);
+    });
+
+    _levelSub = stt.normalizedLevel.listen((l) {
+      if (!mounted) return;
+      setState(() => _level = l);
+    });
+
+    _progressSub = tts.progress.listen((p) {
+      if (!mounted) return;
+      setState(() {
+        _spokenLine = p.text;
+        _hlStart = p.wordStart;
+        _hlEnd = p.wordEnd;
+      });
+    });
+
+    _ttsStatusSub = tts.status.listen((s) {
+      if (!mounted) return;
+      if (s == TtsStatus.idle) {
+        setState(() {
+          _hlStart = null;
+          _hlEnd = null;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _transcriptSub?.cancel();
+    _levelSub?.cancel();
+    _progressSub?.cancel();
+    _ttsStatusSub?.cancel();
+    super.dispose();
+  }
+
+  String _statusLabel(VoiceState s) => switch (s) {
+        VoiceState.idle => 'Tap to talk',
+        VoiceState.listening => 'Listening…',
+        VoiceState.processing => 'Thinking',
+        VoiceState.responding => 'Speaking',
+      };
+
+  String _statusHint(VoiceState s) => switch (s) {
+        VoiceState.idle => 'or say "Hi OpenClaw" (slice 1D)',
+        VoiceState.listening => 'Tap to stop',
+        VoiceState.processing => '',
+        VoiceState.responding => 'Tap to stop',
+      };
+
+  String _transcriptForState(VoiceState s) {
+    switch (s) {
+      case VoiceState.listening:
+      case VoiceState.processing:
+        return _liveTranscript;
+      case VoiceState.responding:
+        return _spokenLine;
+      case VoiceState.idle:
+        return '';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vstate = ref.watch(voiceStateProvider);
+    final controller = ref.read(voiceControllerProvider(widget.sessionKey));
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragEnd: (d) {
+        if ((d.primaryVelocity ?? 0) < -200) {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const ChatScreen()),
+          );
+        }
+      },
+      child: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [OcColors.bgTop, OcColors.bgBottom],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              const Spacer(),
+              StateRing(
+                state: vstate,
+                level: _level,
+                onTap: controller.tapMic,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                _statusLabel(vstate),
+                style: const TextStyle(
+                  color: OcColors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _statusHint(vstate),
+                style: const TextStyle(
+                    color: OcColors.textSubtitle, fontSize: 11),
+              ),
+              const SizedBox(height: 18),
+              VoiceVisualizer(
+                level: _level,
+                active: vstate == VoiceState.listening ||
+                    vstate == VoiceState.responding,
+              ),
+              const SizedBox(height: 12),
+              TranscriptStrip(
+                text: _transcriptForState(vstate),
+                highlightStart:
+                    vstate == VoiceState.responding ? _hlStart : null,
+                highlightEnd: vstate == VoiceState.responding ? _hlEnd : null,
+              ),
+              const Spacer(flex: 2),
+              const Padding(
+                padding: EdgeInsets.only(bottom: 18),
+                child: Text(
+                  '↑ swipe up to type',
+                  style: TextStyle(color: OcColors.textMeta, fontSize: 11),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

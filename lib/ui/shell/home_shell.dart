@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
-import 'package:stt_tts/ui/chat/chat_screen.dart';
 import 'package:stt_tts/ui/sessions/sessions_drawer.dart';
+import 'package:stt_tts/ui/speech/voice_home.dart';
 import 'package:stt_tts/ui/widgets/connection_banner.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
@@ -79,10 +80,34 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ],
       ),
       drawer: const Drawer(child: SessionsDrawer()),
-      body: const Column(
+      body: Column(
         children: [
-          ConnectionBanner(),
-          Expanded(child: ChatScreen()),
+          const ConnectionBanner(),
+          Expanded(
+            child: Builder(
+              builder: (context) {
+                final sessionKey = ref.watch(currentSessionProvider);
+                if (sessionKey == null) {
+                  return Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [OcColors.bgTop, OcColors.bgBottom],
+                      ),
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'No conversation yet',
+                        style: TextStyle(color: OcColors.textSubtitle),
+                      ),
+                    ),
+                  );
+                }
+                return VoiceHome(sessionKey: sessionKey);
+              },
+            ),
+          ),
         ],
       ),
     );
