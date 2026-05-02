@@ -50,11 +50,22 @@ class OpenClawGatewayClient implements GatewayClient {
     final identity = await _identityManager.loadOrCreate();
     _instanceId ??= newInstanceId();
 
-    // The gateway enforces an Origin allowlist. Set Origin to the http(s)
-    // form of the gateway URL so it matches the Control UI's host.
+    // The gateway enforces an Origin allowlist (gateway.controlUi.allowedOrigins).
+    // Defaults are http://localhost:<port> and http://127.0.0.1:<port>.
+    //
+    // For loopback hosts and the Android-emulator host alias (10.0.2.2 → host's
+    // 127.0.0.1), rewrite Origin to 127.0.0.1 so it lands inside the default
+    // allowlist regardless of which name the client used to dial.
+    //
+    // For non-loopback hosts (real LAN / WAN), pass the URL's authority through
+    // unchanged — the gateway operator must add that origin to allowedOrigins.
     final wsUri = Uri.parse(config.wsUrl);
     final originScheme = wsUri.scheme == 'wss' ? 'https' : 'http';
-    final origin = '$originScheme://${wsUri.authority}';
+    const loopbackHosts = {'localhost', '127.0.0.1', '10.0.2.2'};
+    final originAuthority = loopbackHosts.contains(wsUri.host)
+        ? '127.0.0.1:${wsUri.port}'
+        : wsUri.authority;
+    final origin = '$originScheme://$originAuthority';
     final conn = WsConnection.connect(
       wsUri,
       log: _log,

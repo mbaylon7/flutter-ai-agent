@@ -118,7 +118,15 @@ class _VoiceHomeState extends ConsumerState<VoiceHome> {
       onVerticalDragEnd: (d) {
         if ((d.primaryVelocity ?? 0) < -200) {
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const ChatScreen()),
+            MaterialPageRoute(
+              // ChatScreen has no Scaffold of its own (it's normally embedded
+              // in HomeShell). Wrap so the route provides Material for the
+              // composer's TextField, plus a back button to return to voice.
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('Chat')),
+                body: const ChatScreen(),
+              ),
+            ),
           );
         }
       },
