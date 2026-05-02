@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/ui/sessions/sessions_drawer.dart';
 import 'package:stt_tts/ui/settings/settings_screen.dart';
 import 'package:stt_tts/ui/speech/voice_home.dart';
+import 'package:stt_tts/ui/states/empty_first_launch.dart';
 import 'package:stt_tts/ui/widgets/connection_banner.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
@@ -89,20 +89,22 @@ class _HomeShellState extends ConsumerState<HomeShell> {
               builder: (context) {
                 final sessionKey = ref.watch(currentSessionProvider);
                 if (sessionKey == null) {
-                  return Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [OcColors.bgTop, OcColors.bgBottom],
-                      ),
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'No conversation yet',
-                        style: TextStyle(color: OcColors.textSubtitle),
-                      ),
-                    ),
+                  return EmptyFirstLaunch(
+                    userName: 'there',
+                    onTapToTalk: () {
+                      // Slice 1: starting a new conversation goes through the gateway —
+                      // the wiring lands later (creating a session via chat.send is the
+                      // simplest path). For now show a hint.
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Starting a new conversation comes in a later slice')),
+                      );
+                    },
+                    onStartTyping: () {
+                      // Same idea — chat composer needs a session.
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Starting a new conversation comes in a later slice')),
+                      );
+                    },
                   );
                 }
                 return VoiceHome(sessionKey: sessionKey);
