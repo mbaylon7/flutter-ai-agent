@@ -5,8 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/data/voice/stt_service.dart';
 import 'package:stt_tts/data/voice/tts_service.dart';
+import 'package:stt_tts/state/settings_provider.dart';
 import 'package:stt_tts/state/voice_controller.dart';
 import 'package:stt_tts/state/voice_provider.dart';
+import 'package:stt_tts/state/wake_word_provider.dart';
 import 'package:stt_tts/ui/chat/chat_screen.dart';
 import 'package:stt_tts/ui/speech/state_ring.dart';
 import 'package:stt_tts/ui/speech/transcript_strip.dart';
@@ -36,6 +38,7 @@ class _VoiceHomeState extends ConsumerState<VoiceHome> {
   StreamSubscription<double>? _levelSub;
   StreamSubscription<TtsProgress>? _progressSub;
   StreamSubscription<TtsStatus>? _ttsStatusSub;
+  StreamSubscription<void>? _wakeWordSub;
 
   @override
   void initState() {
@@ -71,6 +74,23 @@ class _VoiceHomeState extends ConsumerState<VoiceHome> {
         });
       }
     });
+
+    // Wake word: sync lifecycle to the toggle, and route triggers to tapMic.
+    final wakeCtrl = ref.read(wakeWordControllerProvider);
+    unawaited(wakeCtrl.sync(speechModeVisible: true));
+    final svc = ref.read(wakeWordServiceProvider);
+    if (svc != null) {
+      _wakeWordSub = svc.triggers.listen((_) {
+        if (!mounted) return;
+        final controller = ref.read(voiceControllerProvider(widget.sessionKey));
+        controller.tapMic();
+      });
+    }
+    // React to settings toggle changes while the screen is visible.
+    ref.listenManual<bool>(
+      settingsProvider.select((s) => s.wakeWordEnabled),
+      (prev, next) => unawaited(wakeCtrl.sync(speechModeVisible: true)),
+    );
   }
 
   @override
@@ -79,6 +99,8 @@ class _VoiceHomeState extends ConsumerState<VoiceHome> {
     _levelSub?.cancel();
     _progressSub?.cancel();
     _ttsStatusSub?.cancel();
+    _wakeWordSub?.cancel();
+    unawaited(ref.read(wakeWordControllerProvider).sync(speechModeVisible: false));
     super.dispose();
   }
 
