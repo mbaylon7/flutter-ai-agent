@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/ui/sessions/sessions_drawer.dart';
+import 'package:stt_tts/ui/settings/settings_screen.dart';
 import 'package:stt_tts/ui/speech/voice_home.dart';
 import 'package:stt_tts/ui/widgets/connection_banner.dart';
 
@@ -70,11 +71,11 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         ),
         title: Text(title),
         actions: [
-          Tooltip(
-            message: 'Settings coming in slice 1D',
-            child: IconButton(
-              icon: const Icon(Icons.settings_outlined),
-              onPressed: null,
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Settings',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const SettingsScreen()),
             ),
           ),
         ],
