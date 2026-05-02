@@ -110,7 +110,15 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     _progressSub?.cancel();
     _ttsStatusSub?.cancel();
     _wakeWordSub?.cancel();
-    unawaited(ref.read(wakeWordControllerProvider).sync(speechModeVisible: false));
+    // Try to stop the wake-word listener. Wrapped in try/catch because the
+    // ProviderScope may already be torn down (e.g. in widget tests), in
+    // which case `ref.read` throws "Cannot use ref after disposed".
+    try {
+      final wakeCtrl = ref.read(wakeWordControllerProvider);
+      unawaited(wakeCtrl.sync(speechModeVisible: false));
+    } catch (_) {
+      // Container is gone — nothing to clean up.
+    }
     super.dispose();
   }
 
