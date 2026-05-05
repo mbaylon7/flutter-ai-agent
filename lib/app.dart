@@ -13,7 +13,7 @@ class OpenClawApp extends ConsumerWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'OpenClaw',
-      theme: ocDarkTheme(),
+      theme: ocLightTheme(),
       home: const _AppRouter(),
     );
   }

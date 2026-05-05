@@ -72,7 +72,7 @@ Widget _buildApp({
       ...extra,
     ],
     child: MaterialApp(
-      theme: ocDarkTheme(),
+      theme: ocLightTheme(),
       home: const Scaffold(body: SessionsDrawer()),
     ),
   );
@@ -130,7 +130,7 @@ void main() {
             ),
           ],
           child: MaterialApp(
-            theme: ocDarkTheme(),
+            theme: ocLightTheme(),
             home: Consumer(
               builder: (context, ref, _) {
                 capturedRef = ref;

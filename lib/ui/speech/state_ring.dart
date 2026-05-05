@@ -39,32 +39,31 @@ class _S extends State<StateRing> with SingleTickerProviderStateMixin {
                   height: 130,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: isThink
-                        ? Border.all(
-                            color: OcColors.accent.withValues(alpha: 0.5),
-                            width: 2,
-                            style: BorderStyle.solid, // dash effect mimicked via opacity oscillation
-                          )
-                        : Border.all(
-                            color: isListen || isSpeak
-                                ? OcColors.accent.withValues(alpha: 0.85)
-                                : OcColors.accent.withValues(alpha: 0.4),
-                            width: isListen || isSpeak ? 3 : 2,
-                          ),
+                    border: Border.all(
+                      color: isListen || isSpeak
+                          ? OcColors.accent.withValues(alpha: 0.85)
+                          : OcColors.borderTint,
+                      width: isListen || isSpeak ? 3 : 2,
+                    ),
                     boxShadow: (isListen || isSpeak)
-                        ? const [
-                            BoxShadow(color: Color(0x8C508CFF), blurRadius: 28),
+                        ? [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.12),
+                              blurRadius: 24,
+                              spreadRadius: 2,
+                            ),
                           ]
                         : null,
                   ),
                 ),
               ),
               Container(
-                width: 90, height: 90,
+                width: 90,
+                height: 90,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isSpeak ? OcColors.accent : OcColors.surface,
-                  border: Border.all(color: OcColors.accent.withValues(alpha: 0.5)),
+                  color: isSpeak ? OcColors.accent : OcColors.surfaceMuted,
+                  border: Border.all(color: OcColors.borderTint),
                 ),
                 child: Icon(
                   isSpeak
@@ -72,7 +71,7 @@ class _S extends State<StateRing> with SingleTickerProviderStateMixin {
                       : isThink
                           ? Icons.more_horiz
                           : Icons.mic,
-                  color: isSpeak ? OcColors.bgBottom : OcColors.accent,
+                  color: isSpeak ? OcColors.surface : OcColors.accent,
                   size: 30,
                 ),
               ),

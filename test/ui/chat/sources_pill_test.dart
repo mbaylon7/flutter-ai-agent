@@ -4,7 +4,7 @@ import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/ui/chat/sources_pill.dart';
 
 Widget _wrap(Widget child) => MaterialApp(
-      theme: ocDarkTheme(),
+      theme: ocLightTheme(),
       home: Scaffold(body: Center(child: child)),
     );
 

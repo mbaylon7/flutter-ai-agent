@@ -65,17 +65,11 @@ class _UserBubble extends StatelessWidget {
           maxWidth: MediaQuery.of(context).size.width * 0.75,
         ),
         child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           decoration: BoxDecoration(
-            color: OcColors.accent.withAlpha(51), // 20% alpha
-            border: Border.all(color: OcColors.accent.withAlpha(128)),
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(18),
-              topRight: Radius.circular(6),
-              bottomLeft: Radius.circular(18),
-              bottomRight: Radius.circular(6),
-            ),
+            color: OcColors.surfaceMuted,
+            borderRadius: BorderRadius.circular(22),
           ),
           child: _BubbleBody(
             message: message,
@@ -130,19 +124,14 @@ class _AssistantBubble extends StatelessWidget {
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.85,
+          maxWidth: MediaQuery.of(context).size.width,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: OcColors.surface,
-                border: Border.all(color: OcColors.borderTint),
-                borderRadius: BorderRadius.circular(18),
-              ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               child: _BubbleBody(
                 message: message,
                 textColor: OcColors.textBody,

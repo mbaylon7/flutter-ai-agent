@@ -26,7 +26,7 @@ Message _message({
 
 Widget _wrap(Widget child) => ProviderScope(
       child: MaterialApp(
-        theme: ocDarkTheme(),
+        theme: ocLightTheme(),
         home: Scaffold(body: child),
       ),
     );

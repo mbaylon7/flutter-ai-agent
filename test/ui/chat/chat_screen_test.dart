@@ -27,7 +27,7 @@ Message _msg({
 Widget _buildApp({List<Override> overrides = const []}) => ProviderScope(
       overrides: overrides,
       child: MaterialApp(
-        theme: ocDarkTheme(),
+        theme: ocLightTheme(),
         home: const Scaffold(body: ChatScreen()),
       ),
     );

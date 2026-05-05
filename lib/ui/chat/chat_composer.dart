@@ -5,8 +5,11 @@ import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/state/messages_provider.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
+import 'package:stt_tts/state/ui_mode_provider.dart';
+import 'package:uuid/uuid.dart';
 
-/// Bottom composer bar: mic stub + text field + send button.
+/// Bottom composer: pill-shaped text field with a trailing icon that swaps
+/// between mic (when empty) and send (when typing).
 class ChatComposer extends ConsumerStatefulWidget {
   const ChatComposer({super.key});
 
@@ -45,11 +48,14 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
   }
 
   Future<void> _send() async {
-    final key = ref.read(currentSessionProvider);
-    if (key == null) return;
-
     final text = _controller.text.trim();
     if (text.isEmpty) return;
+
+    var key = ref.read(currentSessionProvider);
+    if (key == null) {
+      key = 'agent:main:${const Uuid().v4()}';
+      ref.read(currentSessionProvider.notifier).state = key;
+    }
 
     _controller.clear();
     _focusNode.unfocus();
@@ -79,7 +85,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
   Widget build(BuildContext context) {
     final key = ref.watch(currentSessionProvider);
 
-    // Detect if there's a streaming message to disable the send button.
     bool streaming = false;
     if (key != null) {
       final msgs = ref.watch(messagesProvider(key));
@@ -89,78 +94,106 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
     final sendEnabled = _hasText && !streaming;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: OcColors.surface,
-        border: Border(top: BorderSide(color: OcColors.borderTint)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      color: OcColors.surface,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: SafeArea(
         top: false,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            // Mic stub — disabled, slice 1C will wire it
-            Tooltip(
-              message: 'Voice mode coming in slice 1C',
-              child: IconButton(
-                // TODO(slice-1c): wire to STT toggle
-                onPressed: null,
-                icon: const Icon(Icons.mic_outlined),
-                color: OcColors.accent,
-                disabledColor: OcColors.accent.withAlpha(77),
-                iconSize: 24,
-              ),
-            ),
-            // Text field
-            Expanded(
-              child: TextField(
-                key: const Key('composer_text_field'),
-                controller: _controller,
-                focusNode: _focusNode,
-                minLines: 1,
-                maxLines: 5,
-                textInputAction: TextInputAction.send,
-                onSubmitted: sendEnabled ? (_) => _send() : null,
-                style: const TextStyle(
-                  color: OcColors.textPrimary,
-                  fontSize: 14,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Type a message…',
-                  hintStyle: const TextStyle(color: OcColors.textMeta),
-                  filled: true,
-                  fillColor: OcColors.overlayTint,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 10,
+        child: Container(
+          decoration: BoxDecoration(
+            color: OcColors.surfaceMuted,
+            borderRadius: BorderRadius.circular(28),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const Key('composer_text_field'),
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  minLines: 1,
+                  maxLines: 5,
+                  textInputAction: TextInputAction.send,
+                  onSubmitted: sendEnabled ? (_) => _send() : null,
+                  style: const TextStyle(
+                    color: OcColors.textPrimary,
+                    fontSize: 15,
                   ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: const BorderSide(color: OcColors.borderTint),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: const BorderSide(color: OcColors.borderTint),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: const BorderSide(color: OcColors.accent),
+                  decoration: const InputDecoration(
+                    hintText: 'Ask anything…',
+                    hintStyle: TextStyle(color: OcColors.textMeta),
+                    isCollapsed: true,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
                   ),
                 ),
               ),
-            ),
-            // Send button
-            IconButton(
-              key: const Key('composer_send_button'),
-              onPressed: sendEnabled ? _send : null,
-              icon: const Icon(Icons.send_rounded),
-              color: OcColors.accent,
-              disabledColor: OcColors.accent.withAlpha(77),
-              iconSize: 24,
-            ),
-          ],
+              _TrailingAction(
+                hasText: _hasText,
+                streaming: streaming,
+                onSend: sendEnabled ? _send : null,
+                onMic: () =>
+                    ref.read(uiModeProvider.notifier).state = UiMode.voice,
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _TrailingAction extends StatelessWidget {
+  const _TrailingAction({
+    required this.hasText,
+    required this.streaming,
+    required this.onSend,
+    required this.onMic,
+  });
+
+  final bool hasText;
+  final bool streaming;
+  final VoidCallback? onSend;
+  final VoidCallback onMic;
+
+  @override
+  Widget build(BuildContext context) {
+    if (hasText) {
+      final enabled = onSend != null && !streaming;
+      return Padding(
+        padding: const EdgeInsets.only(left: 4, right: 2, bottom: 2),
+        child: Material(
+          color: enabled ? OcColors.textPrimary : OcColors.textMeta,
+          shape: const CircleBorder(),
+          child: InkWell(
+            customBorder: const CircleBorder(),
+            onTap: enabled ? onSend : null,
+            child: const SizedBox(
+              width: 36,
+              height: 36,
+              child: Icon(
+                Icons.arrow_upward_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return IconButton(
+      key: const Key('composer_mic_button'),
+      tooltip: 'Switch to voice',
+      onPressed: onMic,
+      icon: const Icon(Icons.mic_none_rounded),
+      color: OcColors.textPrimary,
+      iconSize: 22,
     );
   }
 }

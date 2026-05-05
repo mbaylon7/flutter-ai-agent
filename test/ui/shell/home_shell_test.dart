@@ -68,7 +68,7 @@ Widget _buildShell({
         currentSessionProvider.overrideWith((_) => initialSessionKey),
     ],
     child: MaterialApp(
-      theme: ocDarkTheme(),
+      theme: ocLightTheme(),
       home: const HomeShell(),
     ),
   );
@@ -110,7 +110,7 @@ void main() {
             ),
           ],
           child: MaterialApp(
-            theme: ocDarkTheme(),
+            theme: ocLightTheme(),
             home: Consumer(
               builder: (context, ref, _) {
                 capturedRef = ref;

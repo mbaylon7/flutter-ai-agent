@@ -53,11 +53,15 @@ class SessionsDrawer extends ConsumerWidget {
                     ),
                   ),
                   Tooltip(
-                    message: 'New conversation coming soon',
+                    message: 'New conversation',
                     child: IconButton(
-                      icon: const Icon(Icons.add,
-                          color: OcColors.accent, size: 22),
-                      onPressed: null, // disabled — coming in a later slice
+                      icon: const Icon(Icons.add_comment_outlined,
+                          color: OcColors.textPrimary, size: 22),
+                      onPressed: () {
+                        ref.read(currentSessionProvider.notifier).state =
+                            null;
+                        Navigator.of(context).maybePop();
+                      },
                     ),
                   ),
                   const SizedBox(width: 4),

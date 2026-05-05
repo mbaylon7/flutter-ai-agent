@@ -22,7 +22,7 @@ Widget _buildApp({
       ),
     ],
     child: MaterialApp(
-      theme: ocDarkTheme(),
+      theme: ocLightTheme(),
       home: const Scaffold(
         body: ConnectionBanner(),
       ),

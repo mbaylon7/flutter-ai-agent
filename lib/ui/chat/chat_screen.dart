@@ -44,7 +44,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final sessionKey = ref.watch(currentSessionProvider);
 
     if (sessionKey == null) {
-      return const _EmptyPlaceholder();
+      return const _ChatEmptyState();
     }
 
     return _SessionThread(
@@ -56,42 +56,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 }
 
 // ---------------------------------------------------------------------------
-// Empty state
+// Empty state — greeting + composer when no session is selected
 // ---------------------------------------------------------------------------
 
-class _EmptyPlaceholder extends StatelessWidget {
-  const _EmptyPlaceholder();
+class _ChatEmptyState extends StatelessWidget {
+  const _ChatEmptyState();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.chat_bubble_outline_rounded,
-            color: OcColors.textMeta,
-            size: 48,
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Pick a conversation',
-            style: TextStyle(
-              color: OcColors.textSubtitle,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
+    return Column(
+      children: const [
+        Expanded(
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                "What's on the agenda today?",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: OcColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Swipe right to open the sessions drawer',
-            style: TextStyle(
-              color: OcColors.textMeta,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
+        ),
+        ChatComposer(),
+      ],
     );
   }
 }
@@ -144,6 +136,30 @@ class _SessionThread extends ConsumerWidget {
       data: (messages) {
         onScrollToBottom();
         final showWorking = _showWorkingIndicator(messages);
+
+        if (messages.isEmpty) {
+          return Column(
+            children: const [
+              Expanded(
+                child: Center(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      "What's on the agenda today?",
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: OcColors.textPrimary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              ChatComposer(),
+            ],
+          );
+        }
 
         // Determine the index of the last assistant message (for the Stop btn).
         final lastAssistantIdx = () {

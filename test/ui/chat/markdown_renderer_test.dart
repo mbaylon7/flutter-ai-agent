@@ -5,7 +5,7 @@ import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/ui/chat/markdown_renderer.dart';
 
 Widget _wrap(Widget child) => MaterialApp(
-      theme: ocDarkTheme(),
+      theme: ocLightTheme(),
       home: Scaffold(body: SingleChildScrollView(child: child)),
     );
 

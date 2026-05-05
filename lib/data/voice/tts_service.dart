@@ -40,24 +40,42 @@ class TtsService {
       _progressCtl.add(TtsProgress(text: text, wordStart: start, wordEnd: end, word: word));
     });
 
+    // Per-call budgets: a hung TTS engine (common on emulators with no voice
+    // data) must not stall init forever. Each platform call gets a short
+    // timeout; on TimeoutException we mark TTS unavailable and bail. speak()
+    // already no-ops when !_ready, so the app remains usable for STT-only.
+    const callBudget = Duration(seconds: 3);
+    const queryBudget = Duration(seconds: 4);
     try {
-      await _tts.awaitSpeakCompletion(false);
-      try { await _tts.setEngine('com.google.android.tts'); } catch (_) {}
-      await _tts.setVolume(1.0);
-      await _tts.setSpeechRate(VoiceConstants.speechRate);
-      await _tts.setPitch(VoiceConstants.pitch);
+      await _tts.awaitSpeakCompletion(false).timeout(callBudget);
+      try {
+        await _tts.setEngine('com.google.android.tts').timeout(callBudget);
+      } catch (_) {/* fall back to system default engine */}
+      await _tts.setVolume(1.0).timeout(callBudget);
+      await _tts.setSpeechRate(VoiceConstants.speechRate).timeout(callBudget);
+      await _tts.setPitch(VoiceConstants.pitch).timeout(callBudget);
 
-      final lang = await _pickPreferredLanguage();
-      await _tts.setLanguage(lang);
-      _voices = await _loadVoicesForLanguage(lang);
+      final lang = await _pickPreferredLanguage().timeout(
+        queryBudget,
+        onTimeout: () => 'en-US',
+      );
+      await _tts.setLanguage(lang).timeout(callBudget);
+      _voices = await _loadVoicesForLanguage(lang).timeout(
+        queryBudget,
+        onTimeout: () => <Map<String, String>>[],
+      );
       final preferred = _pickPreferredVoice(_voices);
       if (preferred != null) {
-        await _tts.setVoice(preferred);
+        try {
+          await _tts.setVoice(preferred).timeout(callBudget);
+        } catch (_) {/* keep going — voice selection is best-effort */}
         _selectedVoiceKey = _voiceKey(preferred);
       } else if (_voices.isNotEmpty) {
         _selectedVoiceKey = _voiceKey(_voices.first);
       }
       _ready = true;
+    } on TimeoutException {
+      _ready = false;
     } on MissingPluginException {
       _ready = false;
     } on PlatformException {

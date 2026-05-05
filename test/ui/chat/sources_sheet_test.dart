@@ -5,7 +5,7 @@ import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/ui/chat/sources_sheet.dart';
 
 Widget _wrap(Widget child) => MaterialApp(
-      theme: ocDarkTheme(),
+      theme: ocLightTheme(),
       home: Scaffold(body: SingleChildScrollView(child: child)),
     );
 

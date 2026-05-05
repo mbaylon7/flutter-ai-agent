@@ -7,10 +7,10 @@ import 'package:stt_tts/data/permissions/permissions.dart';
 import 'package:stt_tts/data/voice/stt_service.dart';
 import 'package:stt_tts/data/voice/tts_service.dart';
 import 'package:stt_tts/state/settings_provider.dart';
+import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:stt_tts/state/voice_controller.dart';
 import 'package:stt_tts/state/voice_provider.dart';
 import 'package:stt_tts/state/wake_word_provider.dart';
-import 'package:stt_tts/ui/chat/chat_screen.dart';
 import 'package:stt_tts/ui/speech/state_ring.dart';
 import 'package:stt_tts/ui/speech/transcript_strip.dart';
 import 'package:stt_tts/ui/states/mic_denied_state.dart';
@@ -143,7 +143,7 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
       };
 
   String _statusHint(VoiceState s) => switch (s) {
-        VoiceState.idle => 'or say "Hi OpenClaw" (slice 1D)',
+        VoiceState.idle => '',
         VoiceState.listening => 'Tap to stop',
         VoiceState.processing => '',
         VoiceState.responding => 'Tap to stop',
@@ -169,89 +169,53 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     if (_micState == MicPermissionState.denied ||
         _micState == MicPermissionState.permanentlyDenied) {
       return MicDeniedState(
-        onTypeInstead: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => Scaffold(
-              appBar: AppBar(title: const Text('Chat')),
-              body: const ChatScreen(),
-            ),
-          ),
-        ),
+        onTypeInstead: () =>
+            ref.read(uiModeProvider.notifier).state = UiMode.chat,
       );
     }
 
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onVerticalDragEnd: (d) {
-        if ((d.primaryVelocity ?? 0) < -200) {
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              // ChatScreen has no Scaffold of its own (it's normally embedded
-              // in HomeShell). Wrap so the route provides Material for the
-              // composer's TextField, plus a back button to return to voice.
-              builder: (_) => Scaffold(
-                appBar: AppBar(title: const Text('Chat')),
-                body: const ChatScreen(),
+    return Container(
+      color: OcColors.surface,
+      child: SafeArea(
+        child: Column(
+          children: [
+            const Spacer(),
+            StateRing(
+              state: vstate,
+              level: _level,
+              onTap: controller.tapMic,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _statusLabel(vstate),
+              style: const TextStyle(
+                color: OcColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
               ),
             ),
-          );
-        }
-      },
-      child: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [OcColors.bgTop, OcColors.bgBottom],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              const Spacer(),
-              StateRing(
-                state: vstate,
-                level: _level,
-                onTap: controller.tapMic,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                _statusLabel(vstate),
-                style: const TextStyle(
-                  color: OcColors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _statusHint(vstate),
-                style: const TextStyle(
-                    color: OcColors.textSubtitle, fontSize: 11),
-              ),
-              const SizedBox(height: 18),
-              VoiceVisualizer(
-                level: _level,
-                active: vstate == VoiceState.listening ||
-                    vstate == VoiceState.responding,
-              ),
-              const SizedBox(height: 12),
-              TranscriptStrip(
-                text: _transcriptForState(vstate),
-                highlightStart:
-                    vstate == VoiceState.responding ? _hlStart : null,
-                highlightEnd: vstate == VoiceState.responding ? _hlEnd : null,
-              ),
-              const Spacer(flex: 2),
-              const Padding(
-                padding: EdgeInsets.only(bottom: 18),
-                child: Text(
-                  '↑ swipe up to type',
-                  style: TextStyle(color: OcColors.textMeta, fontSize: 11),
-                ),
-              ),
-            ],
-          ),
+            const SizedBox(height: 4),
+            Text(
+              _statusHint(vstate),
+              style: const TextStyle(
+                  color: OcColors.textSubtitle, fontSize: 11),
+            ),
+            const SizedBox(height: 18),
+            VoiceVisualizer(
+              level: _level,
+              active: vstate == VoiceState.listening ||
+                  vstate == VoiceState.responding,
+            ),
+            const SizedBox(height: 12),
+            TranscriptStrip(
+              text: _transcriptForState(vstate),
+              highlightStart:
+                  vstate == VoiceState.responding ? _hlStart : null,
+              highlightEnd: vstate == VoiceState.responding ? _hlEnd : null,
+            ),
+            const Spacer(flex: 2),
+            const SizedBox(height: 18),
+          ],
         ),
       ),
     );
