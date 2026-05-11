@@ -50,22 +50,15 @@ class OpenClawGatewayClient implements GatewayClient {
     final identity = await _identityManager.loadOrCreate();
     _instanceId ??= newInstanceId();
 
-    // The gateway enforces an Origin allowlist (gateway.controlUi.allowedOrigins).
-    // Defaults are http://localhost:<port> and http://127.0.0.1:<port>.
-    //
-    // For loopback hosts and the Android-emulator host alias (10.0.2.2 → host's
-    // 127.0.0.1), rewrite Origin to 127.0.0.1 so it lands inside the default
-    // allowlist regardless of which name the client used to dial.
-    //
-    // For non-loopback hosts (real LAN / WAN), pass the URL's authority through
-    // unchanged — the gateway operator must add that origin to allowedOrigins.
+    // The gateway enforces an Origin allowlist (gateway.controlUi.allowedOrigins)
+    // whose defaults are http://localhost:<port> and http://127.0.0.1:<port>.
+    // The gateway only inspects the Origin header — not the dial host — so we
+    // always advertise 127.0.0.1:<port> to land inside the default allowlist,
+    // regardless of whether the client dialed loopback, the emulator alias
+    // (10.0.2.2), or a LAN IP.
     final wsUri = Uri.parse(config.wsUrl);
     final originScheme = wsUri.scheme == 'wss' ? 'https' : 'http';
-    const loopbackHosts = {'localhost', '127.0.0.1', '10.0.2.2'};
-    final originAuthority = loopbackHosts.contains(wsUri.host)
-        ? '127.0.0.1:${wsUri.port}'
-        : wsUri.authority;
-    final origin = '$originScheme://$originAuthority';
+    final origin = '$originScheme://127.0.0.1:${wsUri.port}';
     final conn = WsConnection.connect(
       wsUri,
       log: _log,
@@ -85,9 +78,11 @@ class OpenClawGatewayClient implements GatewayClient {
     final nonce = challenge.payload['nonce'] as String;
     _log.info('challenge received, nonce=$nonce');
 
-    // Build the device proof — token only when no deviceToken yet.
-    final tokenForProof =
-        config.deviceToken == null ? config.token : null;
+    // The gateway resolves the signature token as
+    // `auth.token ?? auth.deviceToken ?? auth.bootstrapToken`. We must sign
+    // with the same value, otherwise the server-rebuilt canonical won't match
+    // ours and the connect is rejected as "device signature invalid".
+    final tokenForProof = config.token ?? config.deviceToken;
     final proof = await buildDeviceProof(
       identity: identity,
       clientId: currentClientId(),
