@@ -8,6 +8,7 @@ import 'package:stt_tts/data/voice/voice_coordinator.dart';
 import 'package:stt_tts/domain/markdown/strip_markdown.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
+import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:stt_tts/state/voice_provider.dart';
 
 /// Provides the singleton STT service. Calls `init()` once.
@@ -58,6 +59,13 @@ class VoiceController {
   /// Tracks the assistant message ids we've already spoken so we don't
   /// re-speak on every list update.
   final Set<String?> _spokenIds = <String?>{};
+
+  /// True once we've absorbed the BehaviorSubject-style replay of the
+  /// current message list on subscribe — any assistant messages present at
+  /// that moment are added to [_spokenIds] without speaking. Without this,
+  /// switching chat → voice → tap mic causes TTS to read the previous
+  /// assistant reply that was already on screen.
+  bool _replaySnapshotConsumed = false;
   StreamSubscription<List<Message>>? _messagesSub;
   StreamSubscription<SttTranscript>? _transcriptSub;
   StreamSubscription<TtsStatus>? _ttsStatusSub;
@@ -128,6 +136,20 @@ class VoiceController {
     final repo = _ref.read(chatRepositoryProvider);
 
     _messagesSub = repo.messages(sessionKey).listen((list) async {
+      // First event after subscribe is a replay of the current list. Treat
+      // every assistant message present as already-spoken so we don't read
+      // back the previous reply when the user enters voice mode.
+      if (!_replaySnapshotConsumed) {
+        _replaySnapshotConsumed = true;
+        for (final m in list) {
+          if (m.role == Role.assistant &&
+              m.streaming == StreamingState.finalized) {
+            _spokenIds.add(m.openclawId ?? m.runId);
+          }
+        }
+        return;
+      }
+
       if (list.isEmpty) return;
       final last = list.last;
       if (last.role != Role.assistant) return;
@@ -135,6 +157,10 @@ class VoiceController {
       final msgKey = last.openclawId ?? last.runId;
       if (_spokenIds.contains(msgKey)) return;
       _spokenIds.add(msgKey);
+
+      // Belt and suspenders: never auto-speak in chat mode. The mic in chat
+      // mode is dictation only; TTS playback is a voice-mode feature.
+      if (_ref.read(uiModeProvider) != UiMode.voice) return;
 
       final text = _plainText(last);
       if (text.isEmpty) return;
