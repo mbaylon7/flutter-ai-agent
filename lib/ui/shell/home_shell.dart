@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/state/ui_mode_provider.dart';
+import 'package:stt_tts/state/voice_session.dart';
 import 'package:stt_tts/ui/chat/chat_screen.dart';
 import 'package:stt_tts/ui/sessions/sessions_drawer.dart';
 import 'package:stt_tts/ui/speech/voice_home.dart';
@@ -39,6 +41,17 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         if (mounted) _ensureSession();
       });
     }
+
+    // When the user toggles voice → chat, fully stop the voice session so
+    // the mic and TTS release. Chat mode never auto-plays.
+    ref.listen<UiMode>(uiModeProvider, (prev, next) {
+      if (prev == UiMode.voice && next == UiMode.chat) {
+        final key = ref.read(currentSessionProvider);
+        if (key != null) {
+          unawaited(ref.read(voiceSessionProvider(key)).stop());
+        }
+      }
+    });
 
     return Scaffold(
       extendBodyBehindAppBar: true,

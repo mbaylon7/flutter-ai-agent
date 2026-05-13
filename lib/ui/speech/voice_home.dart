@@ -4,14 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/data/permissions/permissions.dart';
-import 'package:stt_tts/data/voice/stt_service.dart';
-import 'package:stt_tts/data/voice/tts_service.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/state/messages_provider.dart';
 import 'package:stt_tts/state/settings_provider.dart';
 import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:stt_tts/state/voice_controller.dart';
 import 'package:stt_tts/state/voice_provider.dart';
+import 'package:stt_tts/state/voice_session.dart';
 import 'package:stt_tts/state/wake_word_provider.dart';
 import 'package:stt_tts/ui/settings/settings_screen.dart';
 import 'package:stt_tts/ui/states/mic_denied_state.dart';
@@ -35,16 +34,10 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     with WidgetsBindingObserver {
   MicPermissionState? _micState;
 
-  String _liveTranscript = '';
-  String _spokenLine = '';
   double _level = 0;
-
   final _scrollCtrl = ScrollController();
 
-  StreamSubscription<SttTranscript>? _transcriptSub;
   StreamSubscription<double>? _levelSub;
-  StreamSubscription<TtsProgress>? _progressSub;
-  StreamSubscription<TtsStatus>? _ttsStatusSub;
   StreamSubscription<void>? _wakeWordSub;
 
   @override
@@ -52,26 +45,10 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     final stt = ref.read(sttServiceProvider);
-    final tts = ref.read(ttsServiceProvider);
-
-    _transcriptSub = stt.transcript.listen((t) {
-      if (!mounted) return;
-      setState(() => _liveTranscript = t.text);
-    });
 
     _levelSub = stt.normalizedLevel.listen((l) {
       if (!mounted) return;
       setState(() => _level = l);
-    });
-
-    _progressSub = tts.progress.listen((p) {
-      if (!mounted) return;
-      setState(() => _spokenLine = p.text);
-    });
-
-    _ttsStatusSub = tts.status.listen((s) {
-      if (!mounted) return;
-      if (s == TtsStatus.idle) setState(() {});
     });
 
     final wakeCtrl = ref.read(wakeWordControllerProvider);
@@ -80,7 +57,8 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     if (svc != null) {
       _wakeWordSub = svc.triggers.listen((_) {
         if (!mounted) return;
-        ref.read(voiceControllerProvider(widget.sessionKey)).tapMic();
+        // Wake word in voice mode: same as tapping the mic — start/resume.
+        unawaited(ref.read(voiceSessionProvider(widget.sessionKey)).toggle());
       });
     }
     ref.listenManual<bool>(
@@ -94,12 +72,15 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _transcriptSub?.cancel();
     _levelSub?.cancel();
-    _progressSub?.cancel();
-    _ttsStatusSub?.cancel();
     _wakeWordSub?.cancel();
     _scrollCtrl.dispose();
+    // Stop any in-flight voice session when the widget tears down. Don't
+    // hold the provider read past unmount because the ProviderScope may be
+    // gone if we're navigating out of the app.
+    try {
+      unawaited(ref.read(voiceSessionProvider(widget.sessionKey)).stop());
+    } catch (_) {}
     try {
       ref.read(wakeWordControllerProvider).sync(speechModeVisible: false);
     } catch (_) {}
@@ -129,8 +110,11 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
   @override
   Widget build(BuildContext context) {
     final vstate = ref.watch(voiceStateProvider);
-    final controller = ref.read(voiceControllerProvider(widget.sessionKey));
+    final session = ref.read(voiceSessionProvider(widget.sessionKey));
     final active = vstate == VoiceState.listening ||
+        vstate == VoiceState.userSpeaking ||
+        vstate == VoiceState.processing ||
+        vstate == VoiceState.aiSpeaking ||
         vstate == VoiceState.responding;
 
     if (_micState == MicPermissionState.denied ||
@@ -147,6 +131,9 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
       orElse: () => const <Message>[],
     );
 
+    final liveUserText = ref.watch(liveUserTranscriptProvider);
+    final liveAiText = ref.watch(liveAiTranscriptProvider);
+
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
     return Container(
@@ -155,7 +142,6 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
         top: false,
         child: Column(
           children: [
-            // Aurora region — design calls for top region with no overlay.
             Expanded(
               flex: 4,
               child: IgnorePointer(
@@ -166,23 +152,32 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
                 ),
               ),
             ),
-            // Conversation transcript.
             Expanded(
               flex: 6,
               child: _Conversation(
                 scrollCtrl: _scrollCtrl,
                 messages: messages,
-                liveUserText: vstate == VoiceState.listening ||
-                        vstate == VoiceState.processing
-                    ? _liveTranscript
+                // While the user is mid-utterance, render the partial transcript
+                // as a subtitle bubble. Hide while processing/aiSpeaking so the
+                // committed user bubble (from messagesProvider) is the source of
+                // truth.
+                liveUserText: (vstate == VoiceState.listening ||
+                        vstate == VoiceState.userSpeaking)
+                    ? liveUserText
                     : '',
-                liveAiText:
-                    vstate == VoiceState.responding ? _spokenLine : '',
+                // While the AI is streaming, render the growing reply as a live
+                // subtitle. Hidden in idle/listening/userSpeaking states.
+                liveAiText: (vstate == VoiceState.aiSpeaking ||
+                        vstate == VoiceState.responding ||
+                        vstate == VoiceState.processing)
+                    ? liveAiText
+                    : '',
+                state: vstate,
               ),
             ),
             _BottomBar(
-              active: active,
-              onMic: controller.tapMic,
+              state: vstate,
+              onMic: () => unawaited(session.toggle()),
               onMenu: () => Scaffold.of(context).openDrawer(),
               onSettings: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const SettingsScreen()),
@@ -201,18 +196,36 @@ class _Conversation extends StatelessWidget {
     required this.messages,
     required this.liveUserText,
     required this.liveAiText,
+    required this.state,
   });
 
   final ScrollController scrollCtrl;
   final List<Message> messages;
   final String liveUserText;
   final String liveAiText;
+  final VoiceState state;
 
   @override
   Widget build(BuildContext context) {
     final items = <Widget>[];
+
+    // While the AI is streaming, hide the last (in-progress) assistant
+    // message from the committed list and let the live subtitle render it
+    // instead — otherwise we'd show the same text twice.
+    final hideLastAssistant = liveAiText.isNotEmpty;
+    Message? lastAssistant;
+    if (hideLastAssistant) {
+      for (var i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role == Role.assistant) {
+          lastAssistant = messages[i];
+          break;
+        }
+      }
+    }
+
     for (final m in messages) {
       if (m.role != Role.user && m.role != Role.assistant) continue;
+      if (identical(m, lastAssistant)) continue;
       final text = m.visibleText.trim();
       if (text.isEmpty) continue;
       items.add(_MessageBlock(
@@ -233,6 +246,13 @@ class _Conversation extends StatelessWidget {
       items.add(_MessageBlock(
         label: 'AI',
         text: liveAiText,
+        accent: false,
+        muted: true,
+      ));
+    } else if (state == VoiceState.processing) {
+      items.add(const _MessageBlock(
+        label: 'AI',
+        text: '…',
         accent: false,
         muted: true,
       ));
@@ -320,19 +340,21 @@ class _MessageBlock extends StatelessWidget {
 
 class _BottomBar extends StatelessWidget {
   const _BottomBar({
-    required this.active,
+    required this.state,
     required this.onMic,
     required this.onMenu,
     required this.onSettings,
   });
 
-  final bool active;
+  final VoiceState state;
   final VoidCallback onMic;
   final VoidCallback onMenu;
   final VoidCallback onSettings;
 
   @override
   Widget build(BuildContext context) {
+    final iconData = _iconFor(state);
+    final color = _colorFor(state);
     return Padding(
       padding: const EdgeInsets.fromLTRB(40, 8, 40, 20),
       child: Row(
@@ -351,7 +373,7 @@ class _BottomBar extends StatelessWidget {
               width: 64,
               height: 64,
               decoration: BoxDecoration(
-                color: active ? OcColors.danger : OcColors.accent,
+                color: color,
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
@@ -361,7 +383,7 @@ class _BottomBar extends StatelessWidget {
                   ),
                 ],
               ),
-              child: const Icon(Icons.mic, color: Colors.white, size: 30),
+              child: Icon(iconData, color: Colors.white, size: 30),
             ),
           ),
           IconButton(
@@ -373,5 +395,32 @@ class _BottomBar extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  IconData _iconFor(VoiceState s) {
+    switch (s) {
+      case VoiceState.aiSpeaking:
+      case VoiceState.responding:
+        return Icons.stop_rounded;
+      case VoiceState.paused:
+        return Icons.play_arrow_rounded;
+      default:
+        return Icons.mic;
+    }
+  }
+
+  Color _colorFor(VoiceState s) {
+    switch (s) {
+      case VoiceState.listening:
+      case VoiceState.userSpeaking:
+      case VoiceState.processing:
+        return OcColors.danger;
+      case VoiceState.aiSpeaking:
+      case VoiceState.responding:
+        return const Color(0xFF3D6BFF);
+      case VoiceState.paused:
+      case VoiceState.idle:
+        return OcColors.accent;
+    }
   }
 }
