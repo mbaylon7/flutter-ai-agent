@@ -137,8 +137,10 @@ class _AssistantBubble extends StatelessWidget {
                 textColor: OcColors.textBody,
               ),
             ),
-            // Sources pill — shown when the assistant message has tool calls.
-            if (toolCalls.isNotEmpty)
+            // Sources pill — shown only on assistant messages that carry
+            // visible text, so it sits below the response instead of floating
+            // above an empty tool-call-only bubble.
+            if (toolCalls.isNotEmpty && message.visibleText.trim().isNotEmpty)
               Padding(
                 padding:
                     const EdgeInsets.only(left: 16, right: 12, bottom: 2),

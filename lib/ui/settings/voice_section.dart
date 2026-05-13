@@ -36,13 +36,14 @@ class VoiceSection extends ConsumerWidget {
                     shrinkWrap: true,
                     children: tts.voices.map((v) {
                       final key = '${v['name']}|${v['locale']}';
+                      final label = v['label'] ?? v['name'] ?? '';
                       return ListTile(
                         title: Text(
-                          v['name'] ?? '',
+                          label,
                           style: const TextStyle(color: OcColors.textPrimary),
                         ),
                         subtitle: Text(
-                          v['locale'] ?? '',
+                          '${v['name']} · ${v['locale']}',
                           style: const TextStyle(color: OcColors.textSubtitle),
                         ),
                         trailing: settings.voiceKey == key

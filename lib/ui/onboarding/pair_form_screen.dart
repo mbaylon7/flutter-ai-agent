@@ -13,7 +13,7 @@ class PairFormScreen extends ConsumerStatefulWidget {
 }
 
 class _PairFormScreenState extends ConsumerState<PairFormScreen> {
-  final _url = TextEditingController(text: 'ws://10.0.2.2:18789/');
+  final _url = TextEditingController(text: 'ws://192.168.1.3:18789/');
   final _token = TextEditingController(text: 'test-123');
 
   @override

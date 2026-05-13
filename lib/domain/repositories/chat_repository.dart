@@ -101,6 +101,10 @@ class ChatRepository {
   }) async {
     final now = DateTime.now();
 
+    // Auto-title the session from the first user message (gateway has no
+    // server-side titling, so without this every session shows "Untitled").
+    final isFirstMessage = _listFor(sessionKey).isEmpty;
+
     // 1. User message (immediately finalized).
     final userMsg = Message(
       role: Role.user,
@@ -137,6 +141,10 @@ class ChatRepository {
       // 6. Update the placeholder with the real runId.
       _updatePlaceholderRunId(sessionKey, run.runId);
 
+      if (isFirstMessage) {
+        await _autoTitleSession(sessionKey, text);
+      }
+
       return run;
     } catch (e) {
       // Mark the placeholder as failed, then rethrow so callers can detect
@@ -154,6 +162,29 @@ class ChatRepository {
 
   /// Abort an in-flight run.
   Future<void> abort(String runId) => _gw.abort(runId);
+
+  Future<void> _autoTitleSession(String sessionKey, String firstMessage) async {
+    final title = deriveTitle(firstMessage);
+    if (title.isEmpty) return;
+    try {
+      await _gw.patchSession(sessionKey, title: title);
+    } catch (_) {
+      // Best-effort — failures fall back to whatever the gateway emits.
+    }
+  }
+
+  /// Derive a short title for a session from the user's first message.
+  /// Public so the chat composer can use the same logic for optimistic upsert.
+  static String deriveTitle(String text) {
+    final cleaned = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleaned.isEmpty) return '';
+    const maxLen = 48;
+    if (cleaned.length <= maxLen) return cleaned;
+    final cut = cleaned.substring(0, maxLen);
+    final lastSpace = cut.lastIndexOf(' ');
+    final trimmed = lastSpace > 16 ? cut.substring(0, lastSpace) : cut;
+    return '$trimmed…';
+  }
 
   /// Release all resources. Idempotent.
   Future<void> dispose() async {

@@ -29,62 +29,55 @@ class SessionsDrawer extends ConsumerWidget {
 
     return Container(
       width: drawerWidth,
-      color: OcColors.surface,
+      color: OcColors.surfaceMuted,
       child: Column(
         children: [
-          // ----------------------------------------------------------------
-          // Top bar
-          // ----------------------------------------------------------------
-          SizedBox(
-            height: 56 + mq.padding.top,
-            child: Padding(
-              padding: EdgeInsets.only(top: mq.padding.top),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: Text(
-                      'Conversations',
-                      style: TextStyle(
-                        color: OcColors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  Tooltip(
-                    message: 'New conversation',
-                    child: IconButton(
-                      icon: const Icon(Icons.add_comment_outlined,
-                          color: OcColors.textPrimary, size: 22),
-                      onPressed: () {
-                        ref.read(currentSessionProvider.notifier).state =
-                            null;
-                        Navigator.of(context).maybePop();
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-              ),
-            ),
-          ),
-
-          // ----------------------------------------------------------------
-          // Search + filter chips
-          // ----------------------------------------------------------------
+          SizedBox(height: mq.padding.top + 8),
           const SessionSearchBar(),
-
-          // ----------------------------------------------------------------
-          // Body
-          // ----------------------------------------------------------------
+          _NewChatRow(
+            onTap: () {
+              ref.read(currentSessionProvider.notifier).state = null;
+              Navigator.of(context).maybePop();
+            },
+          ),
           Expanded(child: _Body(state: state, currentKey: currentKey)),
-
-          // ----------------------------------------------------------------
-          // Footer
-          // ----------------------------------------------------------------
           _Footer(bottomPadding: mq.padding.bottom),
         ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// "New chat" row directly below the search bar.
+// ---------------------------------------------------------------------------
+
+class _NewChatRow extends StatelessWidget {
+  const _NewChatRow({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: const Padding(
+        padding: EdgeInsets.fromLTRB(20, 10, 16, 10),
+        child: Row(
+          children: [
+            Icon(Icons.edit_outlined,
+                color: OcColors.textPrimary, size: 22),
+            SizedBox(width: 14),
+            Text(
+              'New chat',
+              style: TextStyle(
+                color: OcColors.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -145,20 +138,16 @@ class _Body extends ConsumerWidget {
           );
         }
 
-        final pinned = sessions.where((s) => s.pinned).toList();
-        final recent = sessions.where((s) => !s.pinned).toList();
-
+        // Reference design: single "Chats" section, pinned floats to top.
+        final ordered = [
+          ...sessions.where((s) => s.pinned),
+          ...sessions.where((s) => !s.pinned),
+        ];
         return ListView(
           padding: EdgeInsets.zero,
           children: [
-            if (pinned.isNotEmpty) ...[
-              _SectionHeader(label: '📌 Pinned'),
-              ...pinned.map((s) => _rowFor(context, ref, s, currentKey)),
-            ],
-            if (recent.isNotEmpty) ...[
-              _SectionHeader(label: 'Recent'),
-              ...recent.map((s) => _rowFor(context, ref, s, currentKey)),
-            ],
+            _SectionHeader(label: 'Chats'),
+            ...ordered.map((s) => _rowFor(context, ref, s, currentKey)),
           ],
         );
       },
@@ -208,14 +197,13 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
       child: Text(
         label,
         style: const TextStyle(
-          color: OcColors.textMeta,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.4,
+          color: OcColors.textPrimary,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

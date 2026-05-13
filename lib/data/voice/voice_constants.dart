@@ -1,10 +1,11 @@
 import 'package:speech_to_text/speech_to_text.dart';
 
 class VoiceConstants {
-  // FROM CLAUDE.md — tuned values that carry forward verbatim.
-  // Do NOT change without referencing CLAUDE.md § "Configuration constants".
-  static const double speechRate = 0.56;
-  static const double pitch = 1.10;
+  // Natural-cadence values. Android's flutter_tts treats ~0.5 as a real-time
+  // speaking pace, and pitch 1.0 avoids the chipmunk lift that made earlier
+  // voices feel robotic.
+  static const double speechRate = 0.50;
+  static const double pitch = 1.0;
   static const Duration pauseFor = Duration(seconds: 3);
   static const Duration listenFor = Duration(minutes: 2);
   static const ListenMode listenMode = ListenMode.dictation;

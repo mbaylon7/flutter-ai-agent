@@ -59,10 +59,6 @@ class SessionRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final timeLabel = formatSessionTime(session.updatedAt);
 
-    // Leading icon — cron → clipboard, else default chat bubble.
-    // TODO(slice-1c): wire 🎙 once we have a per-session voice indicator.
-    final leadingEmoji = session.kind == 'cron' ? '📋' : '💬';
-
     final decoration = active
         ? BoxDecoration(
             color: OcColors.borderTint.withValues(alpha: 0.5),
@@ -83,23 +79,6 @@ class SessionRow extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Leading circle with emoji
-            Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: OcColors.overlayTint,
-                shape: BoxShape.circle,
-              ),
-              child: Text(
-                leadingEmoji,
-                style: const TextStyle(fontSize: 16),
-              ),
-            ),
-            const SizedBox(width: 10),
-
-            // Middle column
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -115,9 +94,9 @@ class SessionRow extends StatelessWidget {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: OcColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
+                            color: OcColors.textBody,
+                            fontWeight: FontWeight.w400,
+                            fontSize: 14,
                           ),
                         ),
                       ),

@@ -67,7 +67,10 @@ class TtsService {
       final preferred = _pickPreferredVoice(_voices);
       if (preferred != null) {
         try {
-          await _tts.setVoice(preferred).timeout(callBudget);
+          await _tts.setVoice({
+            'name': preferred['name']!,
+            'locale': preferred['locale']!,
+          }).timeout(callBudget);
         } catch (_) {/* keep going — voice selection is best-effort */}
         _selectedVoiceKey = _voiceKey(preferred);
       } else if (_voices.isNotEmpty) {
@@ -104,7 +107,8 @@ class TtsService {
   Future<void> selectVoice(String key) async {
     final v = _voices.firstWhere((vv) => _voiceKey(vv) == key, orElse: () => {});
     if (v.isEmpty) return;
-    await _tts.setVoice(v);
+    // flutter_tts.setVoice only expects {name, locale}; strip our extras.
+    await _tts.setVoice({'name': v['name']!, 'locale': v['locale']!});
     _selectedVoiceKey = key;
   }
 
@@ -141,17 +145,41 @@ class TtsService {
           if (name != null && locale != null) {
             final nl = locale.toLowerCase().replaceAll('_','-');
             if (nl == n || nl.startsWith(prefix)) {
-              all.add({'name': name, 'locale': locale});
+              final m = {'name': name, 'locale': locale};
+              final g = _voiceGender(name);
+              if (g != null) m['gender'] = g;
+              // Carry quality hints when the platform exposes them — used by
+              // _voiceScore to prefer high-quality network voices.
+              final net = v['network_required']?.toString();
+              if (net != null) m['network_required'] = net;
+              final q = v['quality']?.toString();
+              if (q != null) m['quality'] = q;
+              all.add(m);
             }
           }
         }
       }
     }
     all.sort((a,b) => _voiceScore(b).compareTo(_voiceScore(a)));
-    final premium = all.where((v) => _voiceScore(v) > 0).toList();
-    final result = premium.isNotEmpty ? premium : all;
-    return result.length > VoiceConstants.maxVoices
-        ? result.sublist(0, VoiceConstants.maxVoices) : result;
+
+    // Keep top 2 male + top 2 female (by score). Falls back to any remaining
+    // voices to fill 4 slots if a gender is missing on this device.
+    final males = all.where((v) => v['gender'] == 'male').take(2).toList();
+    final females = all.where((v) => v['gender'] == 'female').take(2).toList();
+    final picked = <Map<String,String>>[];
+    for (var i = 0; i < 2; i++) {
+      if (i < females.length) picked.add({...females[i], 'label': 'Female ${i + 1}'});
+      if (i < males.length) picked.add({...males[i], 'label': 'Male ${i + 1}'});
+    }
+    if (picked.length < 4) {
+      final remaining = all.where((v) => !picked.any((p) =>
+          p['name'] == v['name'] && p['locale'] == v['locale']));
+      for (final v in remaining) {
+        if (picked.length >= 4) break;
+        picked.add({...v, 'label': 'Voice ${picked.length + 1}'});
+      }
+    }
+    return picked;
   }
 
   Map<String,String>? _pickPreferredVoice(List<Map<String,String>> voices) {
@@ -160,15 +188,59 @@ class TtsService {
     return sorted.first;
   }
 
+  /// Best-effort gender inference from voice name. Returns 'male', 'female',
+  /// or null when unknown. Heuristics: literal "male"/"female" first, then
+  /// known Google TTS variant codes (Wavenet/Studio letters, Pixel `xxx`
+  /// codes like `tpf`/`iom`).
+  String? _voiceGender(String name) {
+    final n = name.toLowerCase();
+    if (n.contains('female')) return 'female';
+    if (RegExp(r'(^|[^fe])male').hasMatch(n)) return 'male';
+
+    // Google Wavenet/Studio/Neural/Journey: letter suffix encodes gender.
+    final m = RegExp(r'(?:wavenet|neural2|studio|journey|news|polyglot)-([a-z])',
+            caseSensitive: false)
+        .firstMatch(n);
+    if (m != null) {
+      const female = {'a', 'c', 'e', 'f', 'g', 'h', 'o'};
+      const male = {'b', 'd', 'i', 'j', 'n', 'q'};
+      final letter = m.group(1)!.toLowerCase();
+      if (female.contains(letter)) return 'female';
+      if (male.contains(letter)) return 'male';
+    }
+
+    // Pixel/Android offline voices: 3-letter code, e.g. en-us-x-tpf-local.
+    final p = RegExp(r'-x-([a-z]{3})-').firstMatch(n);
+    if (p != null) {
+      final code = p.group(1)!;
+      const femaleCodes = {'tpf', 'tpc', 'iog', 'sfg'};
+      const maleCodes = {'iol', 'iom', 'tpd', 'sfb'};
+      if (femaleCodes.contains(code)) return 'female';
+      if (maleCodes.contains(code)) return 'male';
+      // Fallback: last letter often differentiates within a family.
+      final last = code[2];
+      if ('cfgh'.contains(last)) return 'female';
+      if ('bdmn'.contains(last)) return 'male';
+    }
+    return null;
+  }
+
   int _voiceScore(Map<String,String> v) {
     final n = (v['name'] ?? '').toLowerCase();
     var s = 0;
     if (n.contains('wavenet') || n.contains('neural') || n.contains('studio')
-        || n.contains('premium') || n.contains('journey')) { s += 100; }
-    if (n.contains('seanet') || n.contains('tpf')) { s += 60; }
-    if (n.contains('female')) { s += 15; }
-    if (n.contains('default')) { s -= 25; }
-    if (n.contains('local') || n.contains('embedded')) { s -= 15; }
+        || n.contains('premium') || n.contains('journey')) { s += 120; }
+    if (n.contains('seanet') || n.contains('tpf')) { s += 70; }
+    // Network voices on Android are the high-quality Google ones.
+    if ((v['network_required'] ?? '').toLowerCase() == 'true') s += 40;
+    final q = int.tryParse(v['quality'] ?? '');
+    if (q != null) s += q;
+    if (n.contains('default')) s -= 25;
+    // Penalise locally-embedded "compact" voices — those are the robotic ones.
+    if (n.contains('local') || n.contains('embedded') ||
+        n.contains('compact')) {
+      s -= 30;
+    }
     return s;
   }
 

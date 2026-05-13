@@ -50,15 +50,13 @@ class OpenClawGatewayClient implements GatewayClient {
     final identity = await _identityManager.loadOrCreate();
     _instanceId ??= newInstanceId();
 
-    // The gateway enforces an Origin allowlist (gateway.controlUi.allowedOrigins)
-    // whose defaults are http://localhost:<port> and http://127.0.0.1:<port>.
-    // The gateway only inspects the Origin header — not the dial host — so we
-    // always advertise 127.0.0.1:<port> to land inside the default allowlist,
-    // regardless of whether the client dialed loopback, the emulator alias
-    // (10.0.2.2), or a LAN IP.
+    // The gateway enforces an Origin allowlist (gateway.controlUi.allowedOrigins),
+    // which on a deployed server is built from SERVER_HOST (e.g.
+    // https://178.104.222.39:18789). Advertise the dial host so the Origin
+    // matches the deployed allowlist; loopback works too on a default install.
     final wsUri = Uri.parse(config.wsUrl);
     final originScheme = wsUri.scheme == 'wss' ? 'https' : 'http';
-    final origin = '$originScheme://127.0.0.1:${wsUri.port}';
+    final origin = '$originScheme://${wsUri.host}:${wsUri.port}';
     final conn = WsConnection.connect(
       wsUri,
       log: _log,
@@ -191,9 +189,18 @@ class OpenClawGatewayClient implements GatewayClient {
       case 'sessions.changed':
       case 'session.added':
       case 'session.updated':
-        final session = (p as Map?)?.cast<String, dynamic>();
-        if (session != null && session['key'] != null) {
-          _sessionStream.add(Session.fromJson(session));
+        final raw = (p as Map?)?.cast<String, dynamic>();
+        if (raw != null) {
+          // Gateway emits `sessionKey`; Session.fromJson expects `key`.
+          // Normalize so the event isn't silently dropped.
+          final normalized = <String, dynamic>{
+            ...raw,
+            if (raw['key'] == null && raw['sessionKey'] != null)
+              'key': raw['sessionKey'],
+          };
+          if (normalized['key'] != null) {
+            _sessionStream.add(Session.fromJson(normalized));
+          }
         }
         break;
     }
@@ -222,8 +229,8 @@ class OpenClawGatewayClient implements GatewayClient {
 
   @override
   Future<void> patchSession(String sessionKey, {String? title}) async {
-    final params = <String, dynamic>{'sessionKey': sessionKey};
-    if (title != null) params['displayName'] = title;
+    final params = <String, dynamic>{'key': sessionKey};
+    if (title != null) params['label'] = title;
     await _rpc!.request(method: 'sessions.patch', params: params);
   }
 
@@ -245,6 +252,10 @@ class OpenClawGatewayClient implements GatewayClient {
       params: {'sessionKey': sessionKey},
     );
     final raw = (res['messages'] as List? ?? const []).cast<Map>();
+    _log.info('history: ${raw.length} raw messages');
+    for (var i = 0; i < raw.length && i < 6; i++) {
+      _log.info('history[$i] keys=${raw[i].keys.toList()} role=${raw[i]['role']}');
+    }
     return raw
         .map((m) => Message.fromJson(m.cast<String, dynamic>()))
         .toList(growable: false);

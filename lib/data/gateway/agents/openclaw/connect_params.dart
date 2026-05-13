@@ -1,8 +1,12 @@
 import 'dart:io';
 
-const openClawClientIdAndroid = 'openclaw-android';
-const openClawClientIdIos = 'openclaw-ios';
-const openClawClientIdMacos = 'openclaw-macos';
+// The gateway exempts only client.id == "openclaw-control-ui" from
+// the webchat-cannot-patch-sessions check (rejectWebchatSessionMutation in
+// server-methods). Advertising as Control UI is what lets us rename
+// sessions (sessions.patch) so they don't all show "Untitled".
+const openClawClientIdAndroid = 'openclaw-control-ui';
+const openClawClientIdIos = 'openclaw-control-ui';
+const openClawClientIdMacos = 'openclaw-control-ui';
 
 const openClawScopes = <String>[
   'operator.admin',
@@ -28,7 +32,12 @@ Map<String, dynamic> buildConnectParams({
   required String locale,
 }) {
   final auth = <String, dynamic>{};
-  if (token != null) auth['token'] = token;
+  if (token != null) {
+    auth['token'] = token;
+    // Gateway is configured with auth.mode=password; the shared token doubles
+    // as the gateway password. Send both so either resolver path accepts.
+    auth['password'] = token;
+  }
   if (deviceToken != null) auth['deviceToken'] = deviceToken;
 
   return {

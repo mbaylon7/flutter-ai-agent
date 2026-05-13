@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/domain/models/message.dart';
+import 'package:stt_tts/domain/models/session.dart';
+import 'package:stt_tts/domain/repositories/chat_repository.dart';
 import 'package:stt_tts/state/messages_provider.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
@@ -57,6 +61,23 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       ref.read(currentSessionProvider.notifier).state = key;
     }
 
+    // The key may already exist because voice mode (home_shell._ensureSession)
+    // pre-generates a UUID, or because the user has been chatting in this
+    // session. Detect "first message in this session" by checking whether the
+    // sidebar already knows about this key.
+    final knownKeys = ref
+            .read(sessionsProvider)
+            .sessions
+            .valueOrNull
+            ?.map((s) => s.key)
+            .toSet() ??
+        const <String>{};
+    final isFirstMessage = !knownKeys.contains(key);
+
+    debugPrint(
+      '[composer] _send key=$key isFirstMessage=$isFirstMessage knownCount=${knownKeys.length}',
+    );
+
     _controller.clear();
     _focusNode.unfocus();
 
@@ -64,6 +85,16 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       await ref
           .read(chatRepositoryProvider)
           .send(sessionKey: key, text: text);
+
+      if (isFirstMessage) {
+        // Pop the session into the sidebar only AFTER the AI has actually
+        // started replying — not when the user merely typed something. This
+        // avoids cluttering the history with abandoned/failed sends.
+        unawaited(_popSessionWhenAiResponds(
+          sessionKey: key,
+          derivedTitle: ChatRepository.deriveTitle(text),
+        ));
+      }
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -79,6 +110,43 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
         ),
       );
     }
+  }
+
+  /// Wait for the assistant to produce any visible content, then insert the
+  /// session into the sidebar. Times out after 60 s so a hung send doesn't
+  /// leak this listener.
+  Future<void> _popSessionWhenAiResponds({
+    required String sessionKey,
+    required String derivedTitle,
+  }) async {
+    try {
+      final repo = ref.read(chatRepositoryProvider);
+      await repo.messages(sessionKey).firstWhere(
+        (list) {
+          return list.any(
+            (m) =>
+                m.role == Role.assistant &&
+                m.parts.whereType<TextPart>().any((p) => p.text.isNotEmpty),
+          );
+        },
+      ).timeout(const Duration(seconds: 60));
+    } catch (e) {
+      debugPrint('[composer] AI never responded ($e); skipping sidebar upsert');
+      return;
+    }
+
+    if (!mounted) return;
+    debugPrint('[composer] AI responded — upserting "$derivedTitle"');
+    ref.read(sessionsProvider.notifier).upsertLocal(
+          Session(
+            key: sessionKey,
+            title: derivedTitle,
+            updatedAt: DateTime.now(),
+            kind: 'direct',
+            pinned: false,
+          ),
+        );
+    unawaited(ref.read(sessionsProvider.notifier).refresh());
   }
 
   @override
