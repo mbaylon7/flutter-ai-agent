@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -8,6 +9,16 @@ class TtsService {
   final FlutterTts _tts = FlutterTts();
   bool _ready = false;
   bool _speaking = false;
+
+  // Streaming-mode queue. When `enqueueChunk` is used, [_awaitCompletion]
+  // becomes true so `_tts.speak` awaits the engine's completion handler —
+  // letting us drain chunks sequentially without gaps. The legacy `speak()`
+  // method (used by settings preview and the legacy one-shot voice flow)
+  // switches back to fire-and-forget mode.
+  final Queue<String> _chunkQueue = Queue<String>();
+  bool _draining = false;
+  Completer<void>? _drainedCompleter;
+  bool _awaitCompletion = false;
 
   List<Map<String, String>> _voices = [];
   String? _selectedVoiceKey;
@@ -94,6 +105,7 @@ class TtsService {
   Future<void> speak(String text) async {
     if (!_ready) return;
     try {
+      await _ensureAwaitMode(false);
       await _tts.stop();
       await Future.delayed(const Duration(milliseconds: 50));
       await _tts.speak(text);
@@ -102,7 +114,81 @@ class TtsService {
     }
   }
 
-  Future<void> stop() async => _tts.stop();
+  /// Append [text] to the streaming chunk queue and start draining if idle.
+  ///
+  /// Returns immediately. Use [awaitDrained] to wait for the queue to empty.
+  /// Empty / whitespace-only chunks are silently ignored.
+  Future<void> enqueueChunk(String text) async {
+    if (!_ready) return;
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+    _chunkQueue.add(trimmed);
+    if (!_draining) {
+      _draining = true;
+      _drainedCompleter ??= Completer<void>();
+      // Fire-and-forget the drain loop; awaitDrained() is the way to wait.
+      unawaited(_drain());
+    }
+  }
+
+  /// Resolves the next time the chunk queue empties. If the queue is already
+  /// empty (and not draining) this returns immediately.
+  Future<void> awaitDrained() {
+    if (!_draining && _chunkQueue.isEmpty) return Future.value();
+    _drainedCompleter ??= Completer<void>();
+    return _drainedCompleter!.future;
+  }
+
+  /// Stop the current utterance and discard any queued chunks.
+  Future<void> clearQueue() async {
+    _chunkQueue.clear();
+    await _tts.stop();
+    _draining = false;
+    if (_drainedCompleter != null && !_drainedCompleter!.isCompleted) {
+      _drainedCompleter!.complete();
+    }
+    _drainedCompleter = null;
+  }
+
+  Future<void> _drain() async {
+    try {
+      await _ensureAwaitMode(true);
+      while (_chunkQueue.isNotEmpty) {
+        final next = _chunkQueue.removeFirst();
+        try {
+          // With awaitSpeakCompletion(true) this returns when the utterance
+          // finishes, giving back-to-back playback without our own pause.
+          await _tts.speak(next);
+        } on PlatformException catch (_) {
+          _statusCtl.add(TtsStatus.failed);
+        }
+      }
+    } finally {
+      _draining = false;
+      if (_drainedCompleter != null && !_drainedCompleter!.isCompleted) {
+        _drainedCompleter!.complete();
+      }
+      _drainedCompleter = null;
+    }
+  }
+
+  Future<void> _ensureAwaitMode(bool desired) async {
+    if (_awaitCompletion == desired) return;
+    try {
+      await _tts.awaitSpeakCompletion(desired);
+      _awaitCompletion = desired;
+    } catch (_) {/* best-effort; engine may not support toggling mid-life */}
+  }
+
+  Future<void> stop() async {
+    _chunkQueue.clear();
+    _draining = false;
+    if (_drainedCompleter != null && !_drainedCompleter!.isCompleted) {
+      _drainedCompleter!.complete();
+    }
+    _drainedCompleter = null;
+    await _tts.stop();
+  }
 
   Future<void> selectVoice(String key) async {
     final v = _voices.firstWhere((vv) => _voiceKey(vv) == key, orElse: () => {});

@@ -13,6 +13,12 @@ class SttService {
   bool _listening = false;
   bool _userWantsToListen = false;
   bool _hasReceivedFinalResult = false;
+
+  /// When true, the engine restarts after every final result as well as
+  /// after silence-driven `done` events, until [stop] is called. Used by
+  /// voice mode for continuous-conversation listening.
+  bool _continuous = false;
+  Duration _pauseFor = VoiceConstants.pauseFor;
   String? _localeId;
 
   // Sound-level normalization (sentinel-seeded; see CLAUDE.md)
@@ -54,8 +60,25 @@ class SttService {
   bool get isAvailable => _enabled;
   bool get isListening => _listening;
 
-  Future<void> start() async {
+  /// One-shot listen. Restarts on silence-only `done` events until a final
+  /// result arrives or [stop] is called.
+  Future<void> start({Duration? pauseFor}) async {
     if (!_enabled) return;
+    _continuous = false;
+    _pauseFor = pauseFor ?? VoiceConstants.pauseFor;
+    _userWantsToListen = true;
+    _hasReceivedFinalResult = false;
+    _resetLevels();
+    await _begin();
+  }
+
+  /// Continuous listen for voice-mode conversations. The engine restarts
+  /// automatically after each final result, so partials and finals keep
+  /// flowing until [stop] is called.
+  Future<void> startContinuous({Duration? pauseFor}) async {
+    if (!_enabled) return;
+    _continuous = true;
+    _pauseFor = pauseFor ?? VoiceConstants.pauseFor;
     _userWantsToListen = true;
     _hasReceivedFinalResult = false;
     _resetLevels();
@@ -64,6 +87,7 @@ class SttService {
 
   Future<void> stop() async {
     _userWantsToListen = false;
+    _continuous = false;
     await _stt.stop();
     _listening = false;
     _statusCtl.add(SttStatus.idle);
@@ -76,7 +100,7 @@ class SttService {
         onSoundLevelChange: _onLevel,
         localeId: _localeId,
         listenFor: VoiceConstants.listenFor,
-        pauseFor: VoiceConstants.pauseFor,
+        pauseFor: _pauseFor,
         listenOptions: SpeechListenOptions(
           partialResults: true,
           listenMode: VoiceConstants.listenMode,
@@ -94,13 +118,15 @@ class SttService {
     final nowListening = s == SpeechToText.listeningStatus;
     _listening = nowListening;
     _statusCtl.add(nowListening ? SttStatus.listening : SttStatus.idle);
-    // Restart loop — preserved from POC
     if (!nowListening && s == SpeechToText.doneStatus && _userWantsToListen) {
-      if (_hasReceivedFinalResult) {
+      // Continuous mode: always restart (engine cycles after each utterance).
+      // One-shot mode: only restart if we haven't yet got a final result.
+      if (!_continuous && _hasReceivedFinalResult) {
         _userWantsToListen = false;
         _hasReceivedFinalResult = false;
         return;
       }
+      _hasReceivedFinalResult = false;
       Future.delayed(const Duration(milliseconds: 200), () {
         if (_userWantsToListen && !_listening) _begin();
       });
