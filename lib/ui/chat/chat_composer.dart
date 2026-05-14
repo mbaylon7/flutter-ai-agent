@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/domain/models/session.dart';
 import 'package:stt_tts/domain/repositories/chat_repository.dart';
@@ -141,9 +140,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
         onSubmitted: (_) => _send(),
         cursorWidth: 3,
         cursorRadius: const Radius.circular(1.5),
-        cursorColor: OcColors.textPrimary,
+        cursorColor: Colors.white,
         style: const TextStyle(
-          color: OcColors.textPrimary,
+          color: Colors.white,
           fontSize: 16,
           height: 1.4,
         ),

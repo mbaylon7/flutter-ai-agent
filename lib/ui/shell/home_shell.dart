@@ -75,7 +75,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
     return Scaffold(
       drawer: const Drawer(child: SessionsDrawer()),
-      backgroundColor: OcColors.surface,
+      backgroundColor: const Color(0xFF050608),
       body: SafeArea(
         top: true,
         bottom: false,
@@ -120,7 +120,7 @@ class _ActionBar extends ConsumerWidget {
               icon: const Icon(
                 Icons.more_vert,
                 size: 26,
-                color: OcColors.textPrimary,
+                color: Colors.white,
               ),
             ),
             _ModeSwitchButton(mode: mode),
@@ -132,7 +132,7 @@ class _ActionBar extends ConsumerWidget {
               icon: const Icon(
                 Icons.settings,
                 size: 26,
-                color: OcColors.textPrimary,
+                color: Colors.white,
               ),
             ),
           ],

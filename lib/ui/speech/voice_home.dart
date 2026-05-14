@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/data/permissions/permissions.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/state/messages_provider.dart';
@@ -136,48 +135,39 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
-    return Container(
-      color: OcColors.surface,
-      child: SafeArea(
-        top: false,
-        child: Column(
-          children: [
-            Expanded(
-              flex: 4,
-              child: IgnorePointer(
-                child: VoiceVisualizer(
-                  level: _level,
-                  active: active,
-                  height: double.infinity,
-                ),
-              ),
+    // Full-screen aurora as a backdrop; conversation overlays on top. The
+    // glow lives at the bottom of the screen (matching the design refs).
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: IgnorePointer(
+            child: VoiceVisualizer(
+              level: _level,
+              active: active,
+              height: double.infinity,
             ),
-            Expanded(
-              flex: 6,
-              child: _Conversation(
-                scrollCtrl: _scrollCtrl,
-                messages: messages,
-                // While the user is mid-utterance, render the partial transcript
-                // as a subtitle bubble. Hide while processing/aiSpeaking so the
-                // committed user bubble (from messagesProvider) is the source of
-                // truth.
-                liveUserText: (vstate == VoiceState.listening ||
-                        vstate == VoiceState.userSpeaking)
-                    ? liveUserText
-                    : '',
-                // While the AI is streaming, render the growing reply as a live
-                // subtitle. Hidden in idle/listening/userSpeaking states.
-                liveAiText: (vstate == VoiceState.aiSpeaking ||
-                        vstate == VoiceState.responding ||
-                        vstate == VoiceState.processing)
-                    ? liveAiText
-                    : '',
-                state: vstate,
-              ),
-            ),
-          ],
+          ),
         ),
-      ),
+        Positioned.fill(
+          child: SafeArea(
+            top: false,
+            child: _Conversation(
+              scrollCtrl: _scrollCtrl,
+              messages: messages,
+              liveUserText: (vstate == VoiceState.listening ||
+                      vstate == VoiceState.userSpeaking)
+                  ? liveUserText
+                  : '',
+              liveAiText: (vstate == VoiceState.aiSpeaking ||
+                      vstate == VoiceState.responding ||
+                      vstate == VoiceState.processing)
+                  ? liveAiText
+                  : '',
+              state: vstate,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -271,8 +261,8 @@ class _Conversation extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    OcColors.surface,
-                    OcColors.surface.withValues(alpha: 0),
+                    const Color(0xFF050608),
+                    const Color(0xFF050608).withValues(alpha: 0),
                   ],
                 ),
               ),
@@ -311,8 +301,8 @@ class _MessageBlock extends StatelessWidget {
               fontWeight: FontWeight.w600,
               letterSpacing: 0.4,
               color: accent
-                  ? const Color(0xFF3D6BFF)
-                  : OcColors.textSubtitle,
+                  ? const Color(0xFF6E8CFF)
+                  : Colors.white.withValues(alpha: 0.45),
             ),
           ),
           const SizedBox(height: 4),
@@ -321,7 +311,9 @@ class _MessageBlock extends StatelessWidget {
             style: TextStyle(
               fontSize: 16,
               height: 1.5,
-              color: muted ? OcColors.textSubtitle : OcColors.textBody,
+              color: muted
+                  ? Colors.white.withValues(alpha: 0.55)
+                  : Colors.white.withValues(alpha: 0.92),
             ),
           ),
         ],
