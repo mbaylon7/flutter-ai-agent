@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/data/voice/stt_service.dart';
+import 'package:stt_tts/data/voice/tts_service.dart';
 import 'package:stt_tts/domain/markdown/strip_markdown.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/domain/voice/sentence_chunker.dart';
@@ -12,11 +13,16 @@ import 'package:stt_tts/state/voice_provider.dart';
 
 /// Orchestrates a continuous Gemini-Live-style conversation for one session.
 ///
+/// AI playback (TTS + word-by-word captions) runs regardless of UI mode —
+/// every new assistant reply is spoken in both chat and voice mode. STT
+/// listening is voice-mode-only and is toggled via [startListening] /
+/// [stopListening] by the shell on mode flips.
+///
 /// State machine (owned by [voiceStateProvider]):
 ///
 /// ```
-///                 toggle()
-///   idle ─────────────────────►  listening
+///                 startListening()
+///   idle ───────────────────────────►  listening
 ///                                  │
 ///         user starts speaking     │
 ///   listening ◄──────────────► userSpeaking
@@ -33,9 +39,6 @@ import 'package:stt_tts/state/voice_provider.dart';
 ///                                  ▼
 ///                              listening
 /// ```
-///
-/// Interruption: tap the mic during [aiSpeaking] → TTS queue cleared, state
-/// returns to [listening]. Tap during any other state toggles pause/resume.
 class VoiceSession {
   VoiceSession(this._ref, this.sessionKey);
 
@@ -44,12 +47,12 @@ class VoiceSession {
 
   static const _chunker = SentenceChunker();
 
-  // Listening / turn detection.
+  // STT pipeline.
   StreamSubscription<SttTranscript>? _transcriptSub;
   Timer? _silenceTimer;
   static const _silenceTimeout = Duration(milliseconds: 1100);
 
-  // AI streaming.
+  // Assistant message stream + TTS chunker.
   StreamSubscription<List<Message>>? _messagesSub;
   bool _messagesReplayConsumed = false;
   final Set<String?> _knownAssistantIds = <String?>{};
@@ -57,12 +60,28 @@ class VoiceSession {
   int _chunkCursor = 0;
   bool _ttsActive = false;
 
+  // Word-by-word subtitle: track what TTS has finished speaking and what it
+  // is currently saying, so [liveAiTranscriptProvider] reveals one word at
+  // a time in sync with the audio.
+  StreamSubscription<TtsProgress>? _ttsProgressSub;
+  StreamSubscription<TtsStatus>? _ttsStatusSub;
+  final List<String> _spokenChunks = [];
+  String _currentChunkText = '';
+
   bool _disposed = false;
 
-  /// Resume / start the session. Idempotent.
-  Future<void> start() async {
+  /// Always-on hooks: assistant message stream + TTS progress tracking. Safe
+  /// to call repeatedly; subsequent calls are no-ops.
+  void enable() {
     if (_disposed) return;
-    if (_ref.read(uiModeProvider) != UiMode.voice) return;
+    _bindMessageStream();
+    _bindTtsProgress();
+  }
+
+  /// Begin (or resume) continuous STT listening. Voice-mode-only entry point.
+  Future<void> startListening() async {
+    if (_disposed) return;
+    enable();
 
     final current = _ref.read(voiceStateProvider);
     if (current == VoiceState.listening ||
@@ -72,61 +91,49 @@ class VoiceSession {
       return;
     }
 
-    _bindMessageStream();
     _bindTranscriptStream();
-
     _ref.read(voiceStateProvider.notifier).set(VoiceState.listening);
     final stt = _ref.read(sttServiceProvider);
     final coord = _ref.read(voiceCoordinatorProvider);
     await coord.startListening(begin: () => stt.startContinuous());
   }
 
-  /// Tap-the-mic toggle. Behavior depends on current state:
-  ///  - idle/paused           → start()
-  ///  - listening             → pause()
-  ///  - userSpeaking          → force end-of-turn (send what we have)
-  ///  - processing            → no-op (request already in flight)
-  ///  - aiSpeaking            → interrupt: stop TTS, return to listening
-  Future<void> toggle() async {
+  /// Stop STT listening without tearing down the AI playback path. Used when
+  /// the shell flips to chat mode — replies still arrive via the keyboard
+  /// and the AI still speaks; only the mic is closed.
+  Future<void> stopListening() async {
+    _silenceTimer?.cancel();
+    final stt = _ref.read(sttServiceProvider);
+    await stt.stop();
     final current = _ref.read(voiceStateProvider);
-    switch (current) {
-      case VoiceState.idle:
-      case VoiceState.paused:
-        await start();
-      case VoiceState.listening:
-        await pause();
-      case VoiceState.userSpeaking:
-        await _forceEndOfTurn();
-      case VoiceState.processing:
-        // Request is in flight; ignore the tap.
-        return;
-      case VoiceState.aiSpeaking:
-      case VoiceState.responding:
-        await _interruptAi();
+    if (current == VoiceState.listening ||
+        current == VoiceState.userSpeaking) {
+      _ref.read(voiceStateProvider.notifier).set(VoiceState.paused);
+      _ref.read(liveUserTranscriptProvider.notifier).state = '';
     }
   }
 
-  /// Pause the session: mic off, TTS off, state retained.
-  Future<void> pause() async {
-    _silenceTimer?.cancel();
-    final stt = _ref.read(sttServiceProvider);
+  /// Legacy alias for the old in-voice-mode toggle behaviour.
+  Future<void> start() => startListening();
+  Future<void> pause() => stopListening();
+
+  /// Fully end the session and release resources.
+  Future<void> stop() async {
+    await stopListening();
     final tts = _ref.read(ttsServiceProvider);
-    await stt.stop();
     await tts.clearQueue();
     _ttsActive = false;
-    _ref.read(voiceStateProvider.notifier).set(VoiceState.paused);
-    _ref.read(liveUserTranscriptProvider.notifier).state = '';
-  }
-
-  /// Fully end the session and release resources. Called when the user
-  /// leaves voice mode.
-  Future<void> stop() async {
-    await pause();
     await _transcriptSub?.cancel();
     _transcriptSub = null;
     await _messagesSub?.cancel();
     _messagesSub = null;
+    await _ttsProgressSub?.cancel();
+    _ttsProgressSub = null;
+    await _ttsStatusSub?.cancel();
+    _ttsStatusSub = null;
     _messagesReplayConsumed = false;
+    _spokenChunks.clear();
+    _currentChunkText = '';
     _ref.read(voiceStateProvider.notifier).set(VoiceState.idle);
     _ref.read(liveUserTranscriptProvider.notifier).state = '';
     _ref.read(liveAiTranscriptProvider.notifier).state = '';
@@ -137,9 +144,11 @@ class VoiceSession {
     _silenceTimer?.cancel();
     _transcriptSub?.cancel();
     _messagesSub?.cancel();
+    _ttsProgressSub?.cancel();
+    _ttsStatusSub?.cancel();
   }
 
-  // --- internal: STT pipeline -------------------------------------------
+  // --- STT pipeline ----------------------------------------------------
 
   void _bindTranscriptStream() {
     if (_transcriptSub != null) return;
@@ -149,8 +158,7 @@ class VoiceSession {
 
   Future<void> _handleTranscript(SttTranscript t) async {
     if (_disposed) return;
-    final mode = _ref.read(uiModeProvider);
-    if (mode != UiMode.voice) return;
+    if (_ref.read(uiModeProvider) != UiMode.voice) return;
 
     final text = t.text.trim();
     if (text.isEmpty) return;
@@ -158,18 +166,12 @@ class VoiceSession {
     final stateNotifier = _ref.read(voiceStateProvider.notifier);
     final current = _ref.read(voiceStateProvider);
 
-    // Surface partials as live captions.
     _ref.read(liveUserTranscriptProvider.notifier).state = text;
 
-    if (current == VoiceState.listening || current == VoiceState.aiSpeaking) {
-      // User started talking — if AI is speaking, this would be barge-in,
-      // but v1 ships without barge-in. Ignore unless we're in listening.
-      if (current == VoiceState.listening) {
-        stateNotifier.set(VoiceState.userSpeaking);
-      }
+    if (current == VoiceState.listening) {
+      stateNotifier.set(VoiceState.userSpeaking);
     }
 
-    // Restart the silence-since-last-partial timer.
     _silenceTimer?.cancel();
     _silenceTimer = Timer(_silenceTimeout, () => _forceEndOfTurn());
 
@@ -195,7 +197,6 @@ class VoiceSession {
     _ref.read(liveUserTranscriptProvider.notifier).state = '';
     _ref.read(liveAiTranscriptProvider.notifier).state = '';
 
-    // Stop STT while we wait for / play back the reply.
     final stt = _ref.read(sttServiceProvider);
     await stt.stop();
 
@@ -205,7 +206,6 @@ class VoiceSession {
             text: text,
           );
     } catch (_) {
-      // Failed send: reopen the mic so the user can retry.
       _ref.read(voiceStateProvider.notifier).set(VoiceState.listening);
       await _ref.read(voiceCoordinatorProvider).startListening(
             begin: () => stt.startContinuous(),
@@ -213,7 +213,7 @@ class VoiceSession {
     }
   }
 
-  // --- internal: assistant streaming + TTS chunker ---------------------
+  // --- Assistant streaming + TTS chunker -------------------------------
 
   void _bindMessageStream() {
     if (_messagesSub != null) return;
@@ -225,7 +225,7 @@ class VoiceSession {
     if (_disposed) return;
 
     // First event is a replay of the current list — record all existing
-    // assistant ids as "already handled" so we never re-speak them.
+    // assistant ids so historical messages don't get re-spoken.
     if (!_messagesReplayConsumed) {
       _messagesReplayConsumed = true;
       for (final m in list) {
@@ -236,10 +236,8 @@ class VoiceSession {
       return;
     }
 
-    if (_ref.read(uiModeProvider) != UiMode.voice) return;
     if (list.isEmpty) return;
 
-    // Find the newest assistant message (last one in the list).
     Message? current;
     for (var i = list.length - 1; i >= 0; i--) {
       if (list[i].role == Role.assistant) {
@@ -251,17 +249,17 @@ class VoiceSession {
 
     final id = _idFor(current);
 
-    // New assistant turn — reset cursor and start a fresh chunking pass.
+    // New assistant turn — reset cursor and clear last reply's subtitle.
     if (id != _activeAssistantKey) {
       _activeAssistantKey = id;
       _chunkCursor = 0;
       _knownAssistantIds.add(id);
+      _spokenChunks.clear();
+      _currentChunkText = '';
       _ref.read(liveAiTranscriptProvider.notifier).state = '';
     }
 
     final plain = stripMarkdown(_plain(current));
-    _ref.read(liveAiTranscriptProvider.notifier).state = plain;
-
     final result = _chunker.drainSentences(
       plain,
       _chunkCursor,
@@ -292,36 +290,67 @@ class VoiceSession {
     final tts = _ref.read(ttsServiceProvider);
     await tts.awaitDrained();
     if (_disposed) return;
+
+    // Flush any in-flight "currently speaking" chunk to the spoken history
+    // so the final subtitle equals the full reply.
+    if (_currentChunkText.isNotEmpty) {
+      _spokenChunks.add(_currentChunkText);
+      _currentChunkText = '';
+      _ref.read(liveAiTranscriptProvider.notifier).state =
+          _spokenChunks.join(' ');
+    }
+
     _ttsActive = false;
     _activeAssistantKey = null;
     _chunkCursor = 0;
 
-    // Return to listening if we're still in voice mode; otherwise stay
-    // wherever the user navigated to.
+    // Only auto-resume STT if we're in voice mode AND the user hasn't
+    // explicitly paused.
     if (_ref.read(uiModeProvider) != UiMode.voice) return;
     final state = _ref.read(voiceStateProvider);
     if (state == VoiceState.idle || state == VoiceState.paused) return;
 
     _ref.read(voiceStateProvider.notifier).set(VoiceState.listening);
-    _ref.read(liveAiTranscriptProvider.notifier).state = '';
     final stt = _ref.read(sttServiceProvider);
     await _ref.read(voiceCoordinatorProvider).startListening(
           begin: () => stt.startContinuous(),
         );
   }
 
-  Future<void> _interruptAi() async {
+  // --- TTS progress (word-by-word subtitle sync) -----------------------
+
+  void _bindTtsProgress() {
+    if (_ttsProgressSub != null) return;
     final tts = _ref.read(ttsServiceProvider);
-    await tts.clearQueue();
-    _ttsActive = false;
-    _activeAssistantKey = null;
-    _chunkCursor = 0;
-    _ref.read(liveAiTranscriptProvider.notifier).state = '';
-    _ref.read(voiceStateProvider.notifier).set(VoiceState.listening);
-    final stt = _ref.read(sttServiceProvider);
-    await _ref.read(voiceCoordinatorProvider).startListening(
-          begin: () => stt.startContinuous(),
-        );
+    _ttsProgressSub = tts.progress.listen(_handleTtsProgress);
+    _ttsStatusSub = tts.status.listen(_handleTtsStatus);
+  }
+
+  void _handleTtsProgress(TtsProgress p) {
+    if (_disposed) return;
+    // A change in `p.text` means a new chunk started — the previous chunk
+    // is now fully spoken, so commit it to the "already spoken" buffer.
+    if (p.text != _currentChunkText) {
+      if (_currentChunkText.isNotEmpty) {
+        _spokenChunks.add(_currentChunkText);
+      }
+      _currentChunkText = p.text;
+    }
+    final spokenSoFar = p.text.substring(0, p.wordEnd.clamp(0, p.text.length));
+    final subtitle = [..._spokenChunks, spokenSoFar].join(' ').trim();
+    _ref.read(liveAiTranscriptProvider.notifier).state = subtitle;
+  }
+
+  void _handleTtsStatus(TtsStatus s) {
+    if (_disposed) return;
+    // Queue fully drained — commit any trailing chunk so the subtitle isn't
+    // missing its last sentence.
+    if (s == TtsStatus.idle && _currentChunkText.isNotEmpty) {
+      _spokenChunks.add(_currentChunkText);
+      _currentChunkText = '';
+      _ref.read(liveAiTranscriptProvider.notifier).state =
+          _spokenChunks.join(' ').trim();
+    }
   }
 
   String _plain(Message m) {

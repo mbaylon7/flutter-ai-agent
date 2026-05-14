@@ -147,13 +147,10 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
           fontSize: 16,
           height: 1.4,
         ),
-        decoration: const InputDecoration(
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          isCollapsed: true,
-          contentPadding: EdgeInsets.symmetric(vertical: 12),
-        ),
+        // Collapsed decoration → no underline, no border, no fill, no
+        // contentPadding from the decorator itself. We add our own padding
+        // around the TextField at the parent level if needed.
+        decoration: const InputDecoration.collapsed(hintText: null),
       ),
     );
   }

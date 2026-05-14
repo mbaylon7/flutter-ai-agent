@@ -43,31 +43,32 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       });
     }
 
-    // First-frame setup: auto-start the voice session if we land in voice
-    // mode at launch.
+    // First-frame setup: always enable the AI playback hook so every reply is
+    // spoken (in chat mode too). Open the mic only if we land in voice mode.
     if (!_initialModeApplied) {
       _initialModeApplied = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
+        final key = _ensureSession();
+        final session = ref.read(voiceSessionProvider(key));
+        session.enable();
         if (ref.read(uiModeProvider) == UiMode.voice) {
-          final key = _ensureSession();
-          unawaited(ref.read(voiceSessionProvider(key)).start());
+          unawaited(session.startListening());
         }
       });
     }
 
-    // React to mode toggles: start/stop the voice session and show the toast.
+    // React to mode toggles: STT on/off + toast. AI playback stays bound.
     ref.listen<UiMode>(uiModeProvider, (prev, next) {
       if (prev == next) return;
+      final key = _ensureSession();
+      final session = ref.read(voiceSessionProvider(key));
+      session.enable();
       if (next == UiMode.chat) {
-        final key = ref.read(currentSessionProvider);
-        if (key != null) {
-          unawaited(ref.read(voiceSessionProvider(key)).stop());
-        }
+        unawaited(session.stopListening());
         showModeToast(context, 'Chat mode');
       } else {
-        final key = _ensureSession();
-        unawaited(ref.read(voiceSessionProvider(key)).start());
+        unawaited(session.startListening());
         showModeToast(context, 'Voice mode');
       }
     });

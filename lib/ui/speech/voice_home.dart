@@ -56,8 +56,10 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     if (svc != null) {
       _wakeWordSub = svc.triggers.listen((_) {
         if (!mounted) return;
-        // Wake word in voice mode: same as tapping the mic — start/resume.
-        unawaited(ref.read(voiceSessionProvider(widget.sessionKey)).toggle());
+        // Wake word resumes (or starts) STT listening.
+        unawaited(
+          ref.read(voiceSessionProvider(widget.sessionKey)).startListening(),
+        );
       });
     }
     ref.listenManual<bool>(
