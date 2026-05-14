@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,10 +6,13 @@ import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:stt_tts/state/voice_session.dart';
+import 'package:stt_tts/ui/chat/chat_composer.dart';
 import 'package:stt_tts/ui/chat/chat_screen.dart';
 import 'package:stt_tts/ui/sessions/sessions_drawer.dart';
+import 'package:stt_tts/ui/settings/settings_screen.dart';
 import 'package:stt_tts/ui/speech/voice_home.dart';
 import 'package:stt_tts/ui/widgets/connection_banner.dart';
+import 'package:stt_tts/ui/widgets/mode_toast.dart';
 import 'package:uuid/uuid.dart';
 
 class HomeShell extends ConsumerStatefulWidget {
@@ -21,11 +23,14 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> {
-  void _ensureSession() {
+  bool _initialModeApplied = false;
+
+  String _ensureSession() {
     final key = ref.read(currentSessionProvider);
-    if (key != null) return;
+    if (key != null) return key;
     final fresh = 'agent:main:${const Uuid().v4()}';
     ref.read(currentSessionProvider.notifier).state = fresh;
+    return fresh;
   }
 
   @override
@@ -33,157 +38,100 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final mode = ref.watch(uiModeProvider);
     final sessionKey = ref.watch(currentSessionProvider);
 
-    // Voice mode needs a session key for the StateRing controller. If we land
-    // in voice mode without one (cold launch, or after "+ new conversation"),
-    // create a fresh one in the next frame so the mic appears immediately.
     if (mode == UiMode.voice && sessionKey == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _ensureSession();
       });
     }
 
-    // When the user toggles voice → chat, fully stop the voice session so
-    // the mic and TTS release. Chat mode never auto-plays.
+    // First-frame setup: auto-start the voice session if we land in voice
+    // mode at launch.
+    if (!_initialModeApplied) {
+      _initialModeApplied = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (ref.read(uiModeProvider) == UiMode.voice) {
+          final key = _ensureSession();
+          unawaited(ref.read(voiceSessionProvider(key)).start());
+        }
+      });
+    }
+
+    // React to mode toggles: start/stop the voice session and show the toast.
     ref.listen<UiMode>(uiModeProvider, (prev, next) {
-      if (prev == UiMode.voice && next == UiMode.chat) {
+      if (prev == next) return;
+      if (next == UiMode.chat) {
         final key = ref.read(currentSessionProvider);
         if (key != null) {
           unawaited(ref.read(voiceSessionProvider(key)).stop());
         }
+        showModeToast(context, 'Chat mode');
+      } else {
+        final key = _ensureSession();
+        unawaited(ref.read(voiceSessionProvider(key)).start());
+        showModeToast(context, 'Voice mode');
       }
     });
 
     return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: PreferredSize(
-        preferredSize: const Size.fromHeight(kToolbarHeight),
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-            child: AppBar(
-              backgroundColor: OcColors.surface.withValues(alpha: 0.65),
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              surfaceTintColor: Colors.transparent,
-              leading: Builder(
-                builder: (ctx) => IconButton(
-                  icon: const Icon(Icons.menu),
-                  tooltip: 'Open conversations',
-                  onPressed: () => Scaffold.of(ctx).openDrawer(),
-                ),
-              ),
-              title: null,
-              centerTitle: false,
-              actions: [
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: _ModeToggle(
-                    mode: mode,
-                    onChanged: (m) =>
-                        ref.read(uiModeProvider.notifier).state = m,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
       drawer: const Drawer(child: SessionsDrawer()),
-      body: Column(
-        children: [
-          SizedBox(
-            height: MediaQuery.of(context).padding.top + kToolbarHeight,
-          ),
-          const ConnectionBanner(),
-          Expanded(
-            child: mode == UiMode.voice
-                ? (sessionKey == null
-                    ? const _VoiceEmptyState()
-                    : VoiceHome(sessionKey: sessionKey))
-                : const ChatScreen(),
-          ),
-        ],
+      backgroundColor: OcColors.surface,
+      body: SafeArea(
+        top: true,
+        bottom: false,
+        child: Column(
+          children: [
+            const ConnectionBanner(),
+            Expanded(
+              child: mode == UiMode.voice
+                  ? (sessionKey == null
+                      ? const _VoiceEmptyState()
+                      : VoiceHome(sessionKey: sessionKey))
+                  : const ChatScreen(),
+            ),
+            if (mode == UiMode.chat) const ChatComposer(),
+            _ActionBar(mode: mode),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// Pill-shaped 2-segment Voice / Chat toggle.
-class _ModeToggle extends StatelessWidget {
-  const _ModeToggle({required this.mode, required this.onChanged});
+/// Shared bottom action row: drawer / mode-switch / settings.
+class _ActionBar extends ConsumerWidget {
+  const _ActionBar({required this.mode});
 
   final UiMode mode;
-  final ValueChanged<UiMode> onChanged;
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: OcColors.surfaceMuted,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      padding: const EdgeInsets.all(3),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _segment(
-            icon: Icons.graphic_eq_rounded,
-            label: 'Voice',
-            selected: mode == UiMode.voice,
-            onTap: () => onChanged(UiMode.voice),
-          ),
-          _segment(
-            icon: Icons.chat_bubble_outline_rounded,
-            label: 'Chat',
-            selected: mode == UiMode.chat,
-            onTap: () => onChanged(UiMode.chat),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _segment({
-    required IconData icon,
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: selected ? OcColors.surface : Colors.transparent,
-          borderRadius: BorderRadius.circular(999),
-          boxShadow: selected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 6,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
+      child: SafeArea(
+        top: false,
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Icon(
-              icon,
-              size: 16,
-              color: selected ? OcColors.textPrimary : OcColors.textSubtitle,
+            IconButton(
+              tooltip: 'Conversations',
+              onPressed: () => Scaffold.of(context).openDrawer(),
+              icon: const Icon(
+                Icons.more_vert,
+                size: 26,
+                color: OcColors.textPrimary,
+              ),
             ),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color:
-                    selected ? OcColors.textPrimary : OcColors.textSubtitle,
+            _ModeSwitchButton(mode: mode),
+            IconButton(
+              tooltip: 'Settings',
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+              ),
+              icon: const Icon(
+                Icons.settings,
+                size: 26,
+                color: OcColors.textPrimary,
               ),
             ),
           ],
@@ -193,13 +141,60 @@ class _ModeToggle extends StatelessWidget {
   }
 }
 
-/// Brief placeholder shown for the single frame between voice-mode entry and
-/// the post-frame callback that materializes a fresh session key.
+/// Center button in the action bar. Tapping flips voice ⇄ chat mode.
+/// Icon reflects the current active mode (mic in voice, chat bubble in chat).
+class _ModeSwitchButton extends ConsumerWidget {
+  const _ModeSwitchButton({required this.mode});
+
+  final UiMode mode;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final inVoice = mode == UiMode.voice;
+    final color = inVoice ? const Color(0xFF3D6BFF) : OcColors.textPrimary;
+    return GestureDetector(
+      onTap: () {
+        ref.read(uiModeProvider.notifier).state =
+            inVoice ? UiMode.chat : UiMode.voice;
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOut,
+        width: 64,
+        height: 64,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.15),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          transitionBuilder: (child, anim) => ScaleTransition(
+            scale: anim,
+            child: FadeTransition(opacity: anim, child: child),
+          ),
+          child: Icon(
+            inVoice ? Icons.mic : Icons.chat_bubble_outline_rounded,
+            key: ValueKey<bool>(inVoice),
+            color: Colors.white,
+            size: 28,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// One-frame placeholder while a fresh voice-mode session key materialises.
 class _VoiceEmptyState extends StatelessWidget {
   const _VoiceEmptyState();
 
   @override
-  Widget build(BuildContext context) {
-    return const SizedBox.expand();
-  }
+  Widget build(BuildContext context) => const SizedBox.expand();
 }

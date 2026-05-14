@@ -9,11 +9,14 @@ import 'package:stt_tts/domain/repositories/chat_repository.dart';
 import 'package:stt_tts/state/messages_provider.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
-import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:uuid/uuid.dart';
 
-/// Bottom composer: pill-shaped text field with a trailing icon that swaps
-/// between mic (when empty) and send (when typing).
+/// Bottom composer for chat mode.
+///
+/// Two visual states:
+///   • Unfocused + empty → almost invisible: a faint "Ask anything…" hint with
+///     a subtle blinking caret so the user knows tapping reveals a keyboard.
+///   • Focused or has text → full pill style with a send button.
 class ChatComposer extends ConsumerStatefulWidget {
   const ChatComposer({super.key});
 
@@ -25,16 +28,24 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
   bool _hasText = false;
+  bool _focused = false;
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
+    _focusNode.addListener(_onFocusChanged);
   }
 
   void _onTextChanged() {
     final next = _controller.text.trim().isNotEmpty;
     if (next != _hasText) setState(() => _hasText = next);
+  }
+
+  void _onFocusChanged() {
+    if (_focused != _focusNode.hasFocus) {
+      setState(() => _focused = _focusNode.hasFocus);
+    }
   }
 
   @override
@@ -61,10 +72,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       ref.read(currentSessionProvider.notifier).state = key;
     }
 
-    // The key may already exist because voice mode (home_shell._ensureSession)
-    // pre-generates a UUID, or because the user has been chatting in this
-    // session. Detect "first message in this session" by checking whether the
-    // sidebar already knows about this key.
     final knownKeys = ref
             .read(sessionsProvider)
             .sessions
@@ -73,10 +80,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
             .toSet() ??
         const <String>{};
     final isFirstMessage = !knownKeys.contains(key);
-
-    debugPrint(
-      '[composer] _send key=$key isFirstMessage=$isFirstMessage knownCount=${knownKeys.length}',
-    );
 
     _controller.clear();
     _focusNode.unfocus();
@@ -87,9 +90,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
           .send(sessionKey: key, text: text);
 
       if (isFirstMessage) {
-        // Pop the session into the sidebar only AFTER the AI has actually
-        // started replying — not when the user merely typed something. This
-        // avoids cluttering the history with abandoned/failed sends.
         unawaited(_popSessionWhenAiResponds(
           sessionKey: key,
           derivedTitle: ChatRepository.deriveTitle(text),
@@ -112,9 +112,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
     }
   }
 
-  /// Wait for the assistant to produce any visible content, then insert the
-  /// session into the sidebar. Times out after 60 s so a hung send doesn't
-  /// leak this listener.
   Future<void> _popSessionWhenAiResponds({
     required String sessionKey,
     required String derivedTitle,
@@ -130,13 +127,11 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
           );
         },
       ).timeout(const Duration(seconds: 60));
-    } catch (e) {
-      debugPrint('[composer] AI never responded ($e); skipping sidebar upsert');
+    } catch (_) {
       return;
     }
 
     if (!mounted) return;
-    debugPrint('[composer] AI responded — upserting "$derivedTitle"');
     ref.read(sessionsProvider.notifier).upsertLocal(
           Session(
             key: sessionKey,
@@ -160,108 +155,185 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
     }
 
     final sendEnabled = _hasText && !streaming;
+    final subtle = !_focused && !_hasText;
 
     return Container(
-      color: OcColors.surface,
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      child: SafeArea(
-        top: false,
-        child: Container(
-          decoration: BoxDecoration(
-            color: OcColors.surfaceMuted,
-            borderRadius: BorderRadius.circular(28),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const Key('composer_text_field'),
-                  controller: _controller,
-                  focusNode: _focusNode,
-                  minLines: 1,
-                  maxLines: 5,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: sendEnabled ? (_) => _send() : null,
-                  style: const TextStyle(
-                    color: OcColors.textPrimary,
-                    fontSize: 15,
-                  ),
-                  decoration: const InputDecoration(
-                    hintText: 'Ask anything…',
-                    hintStyle: TextStyle(color: OcColors.textMeta),
-                    isCollapsed: true,
-                    border: InputBorder.none,
-                    enabledBorder: InputBorder.none,
-                    focusedBorder: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
+      color: Colors.transparent,
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        decoration: BoxDecoration(
+          color: subtle
+              ? Colors.transparent
+              : OcColors.surfaceMuted,
+          borderRadius: BorderRadius.circular(28),
+          border: subtle
+              ? Border.all(
+                  color: OcColors.textMeta.withValues(alpha: 0.18),
+                  width: 1,
+                )
+              : null,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Expanded(
+              child: Stack(
+                alignment: Alignment.centerLeft,
+                children: [
+                  // Real TextField — always present, becomes opaque on focus.
+                  AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    opacity: subtle ? 0 : 1,
+                    child: TextField(
+                      key: const Key('composer_text_field'),
+                      controller: _controller,
+                      focusNode: _focusNode,
+                      minLines: 1,
+                      maxLines: 5,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: sendEnabled ? (_) => _send() : null,
+                      style: const TextStyle(
+                        color: OcColors.textPrimary,
+                        fontSize: 15,
+                      ),
+                      decoration: const InputDecoration(
+                        hintText: 'Ask anything…',
+                        hintStyle: TextStyle(color: OcColors.textMeta),
+                        isCollapsed: true,
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  // Subtle "type here" hint shown only when unfocused + empty.
+                  if (subtle)
+                    Positioned.fill(
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: _focusNode.requestFocus,
+                        child: const Padding(
+                          padding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                          child: _SubtleHint(),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              _TrailingAction(
-                hasText: _hasText,
-                streaming: streaming,
+            ),
+            if (!subtle)
+              _SendButton(
+                enabled: sendEnabled,
                 onSend: sendEnabled ? _send : null,
-                onMic: () =>
-                    ref.read(uiModeProvider.notifier).state = UiMode.voice,
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _TrailingAction extends StatelessWidget {
-  const _TrailingAction({
-    required this.hasText,
-    required this.streaming,
-    required this.onSend,
-    required this.onMic,
-  });
+/// "Ask anything…" with a faint blinking caret. Visible when the composer is
+/// idle so the user notices a text field is present.
+class _SubtleHint extends StatefulWidget {
+  const _SubtleHint();
 
-  final bool hasText;
-  final bool streaming;
-  final VoidCallback? onSend;
-  final VoidCallback onMic;
+  @override
+  State<_SubtleHint> createState() => _SubtleHintState();
+}
+
+class _SubtleHintState extends State<_SubtleHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (hasText) {
-      final enabled = onSend != null && !streaming;
-      return Padding(
-        padding: const EdgeInsets.only(left: 4, right: 2, bottom: 2),
-        child: Material(
-          color: enabled ? OcColors.textPrimary : OcColors.textMeta,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: enabled ? onSend : null,
-            child: const SizedBox(
-              width: 36,
-              height: 36,
-              child: Icon(
-                Icons.arrow_upward_rounded,
-                color: Colors.white,
-                size: 20,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        AnimatedBuilder(
+          animation: _controller,
+          builder: (_, child) {
+            // Square-wave blink: visible for the first half, hidden for the
+            // second. Smooth fade would look fancy but a sharp blink reads as
+            // a caret more clearly.
+            final visible = _controller.value < 0.55;
+            return Opacity(
+              opacity: visible ? 0.55 : 0.0,
+              child: Container(
+                width: 1.5,
+                height: 16,
+                color: OcColors.textPrimary,
               ),
+            );
+          },
+        ),
+        const SizedBox(width: 6),
+        Text(
+          'Ask anything…',
+          style: TextStyle(
+            color: OcColors.textMeta.withValues(alpha: 0.75),
+            fontSize: 15,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SendButton extends StatelessWidget {
+  const _SendButton({required this.enabled, required this.onSend});
+
+  final bool enabled;
+  final VoidCallback? onSend;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, right: 2, bottom: 2),
+      child: Material(
+        color: enabled ? OcColors.textPrimary : OcColors.textMeta,
+        shape: const CircleBorder(),
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          onTap: enabled ? onSend : null,
+          child: const SizedBox(
+            width: 36,
+            height: 36,
+            child: Icon(
+              Icons.arrow_upward_rounded,
+              color: Colors.white,
+              size: 20,
             ),
           ),
         ),
-      );
-    }
-    return IconButton(
-      key: const Key('composer_mic_button'),
-      tooltip: 'Switch to voice',
-      onPressed: onMic,
-      icon: const Icon(Icons.mic_none_rounded),
-      color: OcColors.textPrimary,
-      iconSize: 22,
+      ),
     );
   }
 }

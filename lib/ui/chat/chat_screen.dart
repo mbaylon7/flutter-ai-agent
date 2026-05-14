@@ -4,7 +4,6 @@ import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/state/messages_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
-import 'package:stt_tts/ui/chat/chat_composer.dart';
 import 'package:stt_tts/ui/chat/message_bubble.dart';
 import 'package:stt_tts/ui/chat/working_indicator.dart';
 
@@ -64,26 +63,19 @@ class _ChatEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: const [
-        Expanded(
-          child: Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                "What's on the agenda today?",
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: OcColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 32),
+        child: Text(
+          "What's on the agenda today?",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: OcColors.textPrimary,
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
           ),
         ),
-        ChatComposer(),
-      ],
+      ),
     );
   }
 }
@@ -138,26 +130,19 @@ class _SessionThread extends ConsumerWidget {
         final showWorking = _showWorkingIndicator(messages);
 
         if (messages.isEmpty) {
-          return Column(
-            children: const [
-              Expanded(
-                child: Center(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 32),
-                    child: Text(
-                      "What's on the agenda today?",
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: OcColors.textPrimary,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.symmetric(horizontal: 32),
+              child: Text(
+                "What's on the agenda today?",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: OcColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-              ChatComposer(),
-            ],
+            ),
           );
         }
 
@@ -192,7 +177,6 @@ class _SessionThread extends ConsumerWidget {
               ),
             ),
             if (showWorking) const WorkingIndicator(),
-            const ChatComposer(),
           ],
         );
       },

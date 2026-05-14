@@ -12,7 +12,6 @@ import 'package:stt_tts/state/voice_controller.dart';
 import 'package:stt_tts/state/voice_provider.dart';
 import 'package:stt_tts/state/voice_session.dart';
 import 'package:stt_tts/state/wake_word_provider.dart';
-import 'package:stt_tts/ui/settings/settings_screen.dart';
 import 'package:stt_tts/ui/states/mic_denied_state.dart';
 import 'package:stt_tts/ui/widgets/voice_visualizer.dart';
 
@@ -110,7 +109,6 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
   @override
   Widget build(BuildContext context) {
     final vstate = ref.watch(voiceStateProvider);
-    final session = ref.read(voiceSessionProvider(widget.sessionKey));
     final active = vstate == VoiceState.listening ||
         vstate == VoiceState.userSpeaking ||
         vstate == VoiceState.processing ||
@@ -173,14 +171,6 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
                     ? liveAiText
                     : '',
                 state: vstate,
-              ),
-            ),
-            _BottomBar(
-              state: vstate,
-              onMic: () => unawaited(session.toggle()),
-              onMenu: () => Scaffold.of(context).openDrawer(),
-              onSettings: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
               ),
             ),
           ],
@@ -338,89 +328,3 @@ class _MessageBlock extends StatelessWidget {
   }
 }
 
-class _BottomBar extends StatelessWidget {
-  const _BottomBar({
-    required this.state,
-    required this.onMic,
-    required this.onMenu,
-    required this.onSettings,
-  });
-
-  final VoiceState state;
-  final VoidCallback onMic;
-  final VoidCallback onMenu;
-  final VoidCallback onSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final iconData = _iconFor(state);
-    final color = _colorFor(state);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(40, 8, 40, 20),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          IconButton(
-            onPressed: onMenu,
-            icon: const Icon(Icons.more_vert,
-                size: 28, color: OcColors.textPrimary),
-            tooltip: 'Menu',
-          ),
-          GestureDetector(
-            onTap: onMic,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: color,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Icon(iconData, color: Colors.white, size: 30),
-            ),
-          ),
-          IconButton(
-            onPressed: onSettings,
-            icon: const Icon(Icons.settings,
-                size: 28, color: OcColors.textPrimary),
-            tooltip: 'Settings',
-          ),
-        ],
-      ),
-    );
-  }
-
-  IconData _iconFor(VoiceState s) {
-    switch (s) {
-      case VoiceState.aiSpeaking:
-      case VoiceState.responding:
-        return Icons.stop_rounded;
-      case VoiceState.paused:
-        return Icons.play_arrow_rounded;
-      default:
-        return Icons.mic;
-    }
-  }
-
-  Color _colorFor(VoiceState s) {
-    switch (s) {
-      case VoiceState.listening:
-      case VoiceState.userSpeaking:
-      case VoiceState.processing:
-        return OcColors.danger;
-      case VoiceState.aiSpeaking:
-      case VoiceState.responding:
-        return const Color(0xFF3D6BFF);
-      case VoiceState.paused:
-      case VoiceState.idle:
-        return OcColors.accent;
-    }
-  }
-}
