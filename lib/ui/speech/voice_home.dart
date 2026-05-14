@@ -138,7 +138,7 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     return Stack(
       children: [
         // Wave stage — full-screen behind everything; wave anchored to
-        // bottom 50% of canvas.
+        // bottom 40% of canvas.
         Positioned.fill(
           child: IgnorePointer(
             child: VoiceVisualizer(
