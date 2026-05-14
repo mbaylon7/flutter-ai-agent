@@ -7,7 +7,6 @@ import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:stt_tts/state/voice_session.dart';
 import 'package:stt_tts/ui/chat/chat_composer.dart';
-import 'package:stt_tts/ui/chat/chat_screen.dart';
 import 'package:stt_tts/ui/sessions/sessions_drawer.dart';
 import 'package:stt_tts/ui/settings/settings_screen.dart';
 import 'package:stt_tts/ui/speech/voice_home.dart';
@@ -82,12 +81,13 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         child: Column(
           children: [
             const ConnectionBanner(),
+            // Unified body: the voice-style aurora + conversation is shown in
+            // BOTH modes. Chat mode just adds a minimal centered text input
+            // above the action row.
             Expanded(
-              child: mode == UiMode.voice
-                  ? (sessionKey == null
-                      ? const _VoiceEmptyState()
-                      : VoiceHome(sessionKey: sessionKey))
-                  : const ChatScreen(),
+              child: sessionKey == null
+                  ? const _VoiceEmptyState()
+                  : VoiceHome(sessionKey: sessionKey),
             ),
             if (mode == UiMode.chat) const ChatComposer(),
             _ActionBar(mode: mode),
