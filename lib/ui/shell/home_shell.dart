@@ -1,19 +1,29 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stt_tts/core/theme.dart';
+import 'package:stt_tts/core/design_tokens.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
+import 'package:stt_tts/state/theme_provider.dart';
 import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:stt_tts/state/voice_session.dart';
 import 'package:stt_tts/ui/chat/chat_composer.dart';
 import 'package:stt_tts/ui/sessions/sessions_drawer.dart';
 import 'package:stt_tts/ui/settings/settings_screen.dart';
 import 'package:stt_tts/ui/speech/voice_home.dart';
-import 'package:stt_tts/ui/widgets/connection_banner.dart';
 import 'package:stt_tts/ui/widgets/mode_toast.dart';
 import 'package:uuid/uuid.dart';
 
+/// Home shell — layout matches `design/voice-app.html`:
+///
+/// * Wave stage fills the bottom 50% behind everything (rendered by
+///   [VoiceHome]).
+/// * Conversation list overlays from `top: 64` to `bottom: 135`.
+/// * Chat-mode minimal input pinned at `bottom: 141`.
+/// * Controls row pinned at `bottom: 35` (drawer / mic / settings).
+/// * Toast pinned at `bottom: 132` (managed by [showModeToast]).
+/// * Home indicator pinned at `bottom: 8`.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -34,6 +44,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = ref.watch(tokensProvider);
     final mode = ref.watch(uiModeProvider);
     final sessionKey = ref.watch(currentSessionProvider);
 
@@ -43,8 +54,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       });
     }
 
-    // First-frame setup: always enable the AI playback hook so every reply is
-    // spoken (in chat mode too). Open the mic only if we land in voice mode.
+    // First-frame setup: always bind AI playback so every reply is spoken;
+    // open the mic only if we land in voice mode.
     if (!_initialModeApplied) {
       _initialModeApplied = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -58,7 +69,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
       });
     }
 
-    // React to mode toggles: STT on/off + toast. AI playback stays bound.
+    // React to mode toggles: STT on/off + toast.
     ref.listen<UiMode>(uiModeProvider, (prev, next) {
       if (prev == next) return;
       final key = _ensureSession();
@@ -68,6 +79,10 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         unawaited(session.stopListening());
         showModeToast(context, 'Chat mode');
       } else {
+        // Leaving chat mode: collapse the soft keyboard. Composer has the
+        // focus while chat mode is active; voice mode should never show a
+        // keyboard underneath the wave/controls.
+        FocusManager.instance.primaryFocus?.unfocus();
         unawaited(session.startListening());
         showModeToast(context, 'Voice mode');
       }
@@ -75,116 +90,208 @@ class _HomeShellState extends ConsumerState<HomeShell> {
 
     return Scaffold(
       drawer: const Drawer(child: SessionsDrawer()),
-      backgroundColor: const Color(0xFF050608),
-      body: SafeArea(
-        top: true,
-        bottom: false,
-        child: Column(
-          children: [
-            const ConnectionBanner(),
-            // Unified body: the voice-style aurora + conversation is shown in
-            // BOTH modes. Chat mode just adds a minimal centered text input
-            // above the action row.
-            Expanded(
-              child: sessionKey == null
-                  ? const _VoiceEmptyState()
-                  : VoiceHome(sessionKey: sessionKey),
+      backgroundColor: tokens.bg,
+      body: Stack(
+        children: [
+          // Wave stage (bottom 50%) + conversation overlay.
+          if (sessionKey != null)
+            Positioned.fill(child: VoiceHome(sessionKey: sessionKey))
+          else
+            const SizedBox.expand(),
+
+          // Chat input — pinned 141 px from the bottom, fades in chat mode.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: OcLayout.chatInputBottom,
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 220),
+              opacity: mode == UiMode.chat ? 1 : 0,
+              child: IgnorePointer(
+                ignoring: mode != UiMode.chat,
+                child: const ChatComposer(),
+              ),
             ),
-            if (mode == UiMode.chat) const ChatComposer(),
-            _ActionBar(mode: mode),
-          ],
+          ),
+
+          // Controls — 35 px from bottom, 36 px gap, 76 px mic.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: OcLayout.controlsBottom,
+            child: _Controls(mode: mode),
+          ),
+
+          // Home indicator — bottom 8, 134x5 pill.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: OcLayout.homeIndicatorBottom,
+            child: Center(
+              child: Container(
+                width: OcLayout.homeIndicatorWidth,
+                height: OcLayout.homeIndicatorHeight,
+                decoration: BoxDecoration(
+                  color: tokens.homeIndicator,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Bottom controls row: drawer · mic-mode-switch · settings.
+class _Controls extends ConsumerWidget {
+  const _Controls({required this.mode});
+
+  final UiMode mode;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = ref.watch(tokensProvider);
+    final inChat = mode == UiMode.chat;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _IconButton(
+          tooltip: 'Conversations',
+          icon: _DotsIcon(color: tokens.micIcon),
+          onTap: () => Scaffold.of(context).openDrawer(),
+        ),
+        const SizedBox(width: OcLayout.controlsGap),
+        _MicButton(active: !inChat),
+        const SizedBox(width: OcLayout.controlsGap),
+        _IconButton(
+          tooltip: 'Settings',
+          icon: _ThinGearIcon(
+            size: OcLayout.gearIconSize,
+            color: tokens.micIcon,
+          ),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _IconButton extends StatelessWidget {
+  const _IconButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String tooltip;
+  final Widget icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkResponse(
+        radius: OcLayout.iconBtnSize / 2,
+        onTap: onTap,
+        child: SizedBox(
+          width: OcLayout.iconBtnSize,
+          height: OcLayout.iconBtnSize,
+          child: Center(child: icon),
         ),
       ),
     );
   }
 }
 
-/// Shared bottom action row: drawer / mode-switch / settings.
-class _ActionBar extends ConsumerWidget {
-  const _ActionBar({required this.mode});
-
-  final UiMode mode;
+/// Three vertical dots — matches the SVG in the HTML controls row.
+class _DotsIcon extends StatelessWidget {
+  const _DotsIcon({required this.color});
+  final Color color;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 6, 20, 16),
-      child: SafeArea(
-        top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            IconButton(
-              tooltip: 'Conversations',
-              onPressed: () => Scaffold.of(context).openDrawer(),
-              icon: const Icon(
-                Icons.more_vert,
-                size: 26,
-                color: Colors.white,
-              ),
-            ),
-            _ModeSwitchButton(mode: mode),
-            IconButton(
-              tooltip: 'Settings',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const SettingsScreen()),
-              ),
-              icon: const Icon(
-                Icons.settings,
-                size: 26,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: OcLayout.smallIconSize,
+      height: OcLayout.smallIconSize,
+      child: CustomPaint(painter: _DotsPainter(color: color)),
     );
   }
 }
 
-/// Center button in the action bar. Tapping flips voice ⇄ chat mode.
-/// Icon reflects the current active mode (mic in voice, chat bubble in chat).
-class _ModeSwitchButton extends ConsumerWidget {
-  const _ModeSwitchButton({required this.mode});
+class _DotsPainter extends CustomPainter {
+  _DotsPainter({required this.color});
+  final Color color;
 
-  final UiMode mode;
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final r = size.width * (1.4 / 24);
+    final paint = Paint()..color = color;
+    canvas.drawCircle(Offset(cx, size.height * (5 / 24)), r, paint);
+    canvas.drawCircle(Offset(cx, size.height * (12 / 24)), r, paint);
+    canvas.drawCircle(Offset(cx, size.height * (19 / 24)), r, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _DotsPainter old) => old.color != color;
+}
+
+/// 76×76 mic / chat-bubble mode-switch button. Active styling when in
+/// voice mode; neutral / dimmer when in chat mode (matches `.mode-chat
+/// .mic-btn` rule).
+class _MicButton extends ConsumerWidget {
+  const _MicButton({required this.active});
+  final bool active;
+
+  /// Live-mic red used when voice mode is on. Mic is always listening in
+  /// voice mode, so this colour reads as a "recording" indicator.
+  static const _liveRed = Color(0xFFEF4444);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final inVoice = mode == UiMode.voice;
-    final color = inVoice ? const Color(0xFF3D6BFF) : OcColors.textPrimary;
+    final tokens = ref.watch(tokensProvider);
+    // Voice mode: solid red, white glyph, no border (the live-mic style).
+    // Chat mode: neutral surface tones from the design tokens.
+    final bg = active ? _liveRed : tokens.micBg;
+    final iconColor = active ? Colors.white : tokens.micIcon;
+    final border = active ? null : Border.all(color: tokens.micBorder, width: 1);
+
     return GestureDetector(
       onTap: () {
+        final current = ref.read(uiModeProvider);
         ref.read(uiModeProvider.notifier).state =
-            inVoice ? UiMode.chat : UiMode.voice;
+            current == UiMode.voice ? UiMode.chat : UiMode.voice;
       },
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 220),
+        duration: const Duration(milliseconds: 240),
         curve: Curves.easeOut,
-        width: 64,
-        height: 64,
+        width: OcLayout.micSize,
+        height: OcLayout.micSize,
         decoration: BoxDecoration(
-          color: color,
+          color: bg,
           shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          border: border,
         ),
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          transitionBuilder: (child, anim) => ScaleTransition(
-            scale: anim,
-            child: FadeTransition(opacity: anim, child: child),
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.65, end: 1).animate(anim),
+              child: child,
+            ),
           ),
           child: Icon(
-            inVoice ? Icons.mic : Icons.chat_bubble_outline_rounded,
-            key: ValueKey<bool>(inVoice),
-            color: Colors.white,
-            size: 28,
+            active ? Icons.mic_none_rounded : Icons.chat_bubble_outline_rounded,
+            key: ValueKey<bool>(active),
+            color: iconColor,
+            size: OcLayout.micIconSize,
           ),
         ),
       ),
@@ -192,10 +299,88 @@ class _ModeSwitchButton extends ConsumerWidget {
   }
 }
 
-/// One-frame placeholder while a fresh voice-mode session key materialises.
-class _VoiceEmptyState extends StatelessWidget {
-  const _VoiceEmptyState();
+// ─── Thin gear icon ─────────────────────────────────────────────────
+//
+// Material's `Icons.settings_outlined` is too heavy even at low `weight`,
+// so we paint our own: 8 teeth radiating from a central hub, stroked with
+// a ~1-px line. Matches the Feather-style gear in the HTML design SVG.
+
+class _ThinGearIcon extends StatelessWidget {
+  const _ThinGearIcon({required this.size, required this.color});
+
+  final double size;
+  final Color color;
 
   @override
-  Widget build(BuildContext context) => const SizedBox.expand();
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _GearPainter(color: color)),
+    );
+  }
+}
+
+class _GearPainter extends CustomPainter {
+  _GearPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final stroke = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * (1.4 / 24)
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..isAntiAlias = true;
+
+    // Hub circle.
+    canvas.drawCircle(Offset(cx, cy), size.width * 0.18, stroke);
+
+    // Outer gear ring with 8 teeth.
+    const teeth = 8;
+    final outerR = size.width * 0.46;
+    final innerR = size.width * 0.36;
+    final tooth = (pi * 2) / teeth;
+    final tipHalf = tooth * 0.18;
+    final baseHalf = tooth * 0.28;
+
+    Offset at(double a, double r) =>
+        Offset(cx + r * cos(a), cy + r * sin(a));
+
+    final path = Path();
+    for (var i = 0; i < teeth; i++) {
+      final c = -pi / 2 + i * tooth; // first tooth at top
+      final baseL = c - baseHalf;
+      final tipL = c - tipHalf;
+      final tipR = c + tipHalf;
+      final baseR = c + baseHalf;
+      final nextBaseL = -pi / 2 + (i + 1) * tooth - baseHalf;
+
+      if (i == 0) {
+        final p = at(baseL, innerR);
+        path.moveTo(p.dx, p.dy);
+      }
+
+      final pTipL = at(tipL, outerR);
+      path.lineTo(pTipL.dx, pTipL.dy);
+      final pTipR = at(tipR, outerR);
+      path.arcToPoint(pTipR,
+          radius: Radius.circular(outerR), clockwise: true, largeArc: false);
+      final pBaseR = at(baseR, innerR);
+      path.lineTo(pBaseR.dx, pBaseR.dy);
+      final pNextBaseL = at(nextBaseL, innerR);
+      path.arcToPoint(pNextBaseL,
+          radius: Radius.circular(innerR), clockwise: true, largeArc: false);
+    }
+    path.close();
+    canvas.drawPath(path, stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant _GearPainter old) => old.color != color;
 }

@@ -79,9 +79,22 @@ class VoiceSession {
   }
 
   /// Begin (or resume) continuous STT listening. Voice-mode-only entry point.
+  ///
+  /// `SttService.init()` is fire-and-forget — on cold launch the post-frame
+  /// callback that triggers this method usually beats the platform-side
+  /// permission/init handshake, so `stt.isAvailable` is still false and the
+  /// underlying `listen` call no-ops. We retry every 250 ms (up to ~3 s) so
+  /// the mic comes up automatically as soon as STT is ready, without the
+  /// user needing to toggle modes to nudge it.
   Future<void> startListening() async {
     if (_disposed) return;
     enable();
+
+    final stt = _ref.read(sttServiceProvider);
+    if (!stt.isAvailable) {
+      _scheduleStartRetry();
+      return;
+    }
 
     final current = _ref.read(voiceStateProvider);
     if (current == VoiceState.listening ||
@@ -93,9 +106,27 @@ class VoiceSession {
 
     _bindTranscriptStream();
     _ref.read(voiceStateProvider.notifier).set(VoiceState.listening);
-    final stt = _ref.read(sttServiceProvider);
     final coord = _ref.read(voiceCoordinatorProvider);
     await coord.startListening(begin: () => stt.startContinuous());
+  }
+
+  int _startRetries = 0;
+  static const _maxStartRetries = 12; // ≈ 3 s at 250 ms apart
+
+  void _scheduleStartRetry() {
+    if (_startRetries >= _maxStartRetries) return;
+    _startRetries++;
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (_disposed) return;
+      // Only retry while we're meant to be in voice mode.
+      if (_ref.read(uiModeProvider) != UiMode.voice) {
+        _startRetries = 0;
+        return;
+      }
+      startListening().whenComplete(() {
+        if (_ref.read(sttServiceProvider).isAvailable) _startRetries = 0;
+      });
+    });
   }
 
   /// Stop STT listening without tearing down the AI playback path. Used when

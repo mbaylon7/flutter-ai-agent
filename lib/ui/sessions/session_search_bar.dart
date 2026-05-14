@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stt_tts/core/theme.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
+import 'package:stt_tts/state/theme_provider.dart';
 
 class SessionSearchBar extends ConsumerStatefulWidget {
   const SessionSearchBar({super.key});
@@ -33,38 +33,35 @@ class _SessionSearchBarState extends ConsumerState<SessionSearchBar> {
 
   @override
   Widget build(BuildContext context) {
-    // Reference design: pill-shaped white search field; no filter chips.
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      child: TextField(
-        controller: _controller,
-        style: const TextStyle(
-          color: OcColors.textPrimary,
-          fontSize: 14,
-        ),
-        decoration: InputDecoration(
-          hintText: 'Search for chats',
-          hintStyle: const TextStyle(color: OcColors.textSubtitle),
-          prefixIcon: const Icon(Icons.search,
-              color: OcColors.textSubtitle, size: 20),
-          filled: true,
-          fillColor: OcColors.surface,
-          isDense: true,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: BorderSide.none,
+    final tokens = ref.watch(tokensProvider);
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: tokens.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: tokens.border, width: 1),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.search, color: tokens.textMuted, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              style: TextStyle(color: tokens.text, fontSize: 13),
+              decoration: InputDecoration(
+                hintText: 'Search for chats',
+                hintStyle: TextStyle(color: tokens.textMuted, fontSize: 13),
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                isCollapsed: true,
+                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
           ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: BorderSide.none,
-          ),
-        ),
+        ],
       ),
     );
   }

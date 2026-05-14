@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:stt_tts/core/theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stt_tts/core/design_tokens.dart';
+import 'package:stt_tts/state/theme_provider.dart';
 
-/// Briefly shows a centered-bottom toast that slides up and fades.
-///
-/// Used by the mic/chat mode-switch button to confirm the new mode.
-/// Auto-dismisses after [duration] (default 1.5 s) and is non-interactive.
+/// Slides up + fades, 1.5 s total. Pinned at `bottom: 132` (matches
+/// `.toast` rule in the design HTML).
 void showModeToast(
   BuildContext context,
   String text, {
@@ -15,7 +15,7 @@ void showModeToast(
 
   late final OverlayEntry entry;
   entry = OverlayEntry(
-    builder: (ctx) => _ModeToast(
+    builder: (_) => _ModeToast(
       text: text,
       duration: duration,
       onDismissed: () {
@@ -26,7 +26,7 @@ void showModeToast(
   overlay.insert(entry);
 }
 
-class _ModeToast extends StatefulWidget {
+class _ModeToast extends ConsumerStatefulWidget {
   const _ModeToast({
     required this.text,
     required this.duration,
@@ -38,38 +38,33 @@ class _ModeToast extends StatefulWidget {
   final VoidCallback onDismissed;
 
   @override
-  State<_ModeToast> createState() => _ModeToastState();
+  ConsumerState<_ModeToast> createState() => _ModeToastState();
 }
 
-class _ModeToastState extends State<_ModeToast>
+class _ModeToastState extends ConsumerState<_ModeToast>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+  late final AnimationController _ctrl;
   late final Animation<double> _opacity;
   late final Animation<Offset> _offset;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: widget.duration,
-    );
+    _ctrl = AnimationController(vsync: this, duration: widget.duration);
 
-    // Phases (fractions of total duration):
-    //   0.00 - 0.18  fade-in + slide-up
-    //   0.18 - 0.80  hold
-    //   0.80 - 1.00  fade-out
     _opacity = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween(begin: 0.0, end: 1.0).chain(CurveTween(curve: Curves.easeOut)),
+        tween: Tween(begin: 0.0, end: 1.0)
+            .chain(CurveTween(curve: Curves.easeOut)),
         weight: 18,
       ),
       TweenSequenceItem(tween: ConstantTween(1.0), weight: 62),
       TweenSequenceItem(
-        tween: Tween(begin: 1.0, end: 0.0).chain(CurveTween(curve: Curves.easeIn)),
+        tween: Tween(begin: 1.0, end: 0.0)
+            .chain(CurveTween(curve: Curves.easeIn)),
         weight: 20,
       ),
-    ]).animate(_controller);
+    ]).animate(_ctrl);
 
     _offset = TweenSequence<Offset>([
       TweenSequenceItem(
@@ -78,24 +73,24 @@ class _ModeToastState extends State<_ModeToast>
         weight: 18,
       ),
       TweenSequenceItem(tween: ConstantTween(Offset.zero), weight: 82),
-    ]).animate(_controller);
+    ]).animate(_ctrl);
 
-    _controller.forward().whenComplete(widget.onDismissed);
+    _ctrl.forward().whenComplete(widget.onDismissed);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _ctrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
+    final tokens = ref.watch(tokensProvider);
     return Positioned(
       left: 0,
       right: 0,
-      bottom: mq.padding.bottom + 100,
+      bottom: OcLayout.toastBottom,
       child: IgnorePointer(
         child: Center(
           child: SlideTransition(
@@ -105,28 +100,27 @@ class _ModeToastState extends State<_ModeToast>
               child: Material(
                 color: Colors.transparent,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 10,
-                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
                   decoration: BoxDecoration(
-                    color: OcColors.textPrimary.withValues(alpha: 0.9),
-                    borderRadius: BorderRadius.circular(999),
+                    color: tokens.toastBg,
+                    border: Border.all(color: tokens.toastBorder, width: 1),
+                    borderRadius: BorderRadius.circular(18),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.18),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                        color: Colors.black.withValues(alpha: 0.25),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
                       ),
                     ],
                   ),
                   child: Text(
                     widget.text,
                     style: TextStyle(
-                      color: OcColors.surface,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 14,
-                      letterSpacing: 0.2,
+                      color: tokens.toastText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.005 * 13,
                     ),
                   ),
                 ),

@@ -2,10 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stt_tts/core/design_tokens.dart';
 import 'package:stt_tts/data/permissions/permissions.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/state/messages_provider.dart';
 import 'package:stt_tts/state/settings_provider.dart';
+import 'package:stt_tts/state/theme_provider.dart';
 import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:stt_tts/state/voice_controller.dart';
 import 'package:stt_tts/state/voice_provider.dart';
@@ -14,12 +16,13 @@ import 'package:stt_tts/state/wake_word_provider.dart';
 import 'package:stt_tts/ui/states/mic_denied_state.dart';
 import 'package:stt_tts/ui/widgets/voice_visualizer.dart';
 
-/// Voice-first home screen for one session.
+/// Per-session voice/chat body.
 ///
-/// Layout (matches `design/draft-design.html`):
-///   • Top ~40% — aurora visualization, no controls.
-///   • Middle — scrollable YOU/AI conversation transcript, latest at bottom.
-///   • Bottom — [menu] · [mic FAB] · [settings].
+/// Layout matches `design/voice-app.html`:
+///   • Wave stage fills the entire painter via `Positioned.fill`; the
+///     wave equation anchors the curve to the bottom 50%.
+///   • Chat stage (conversation list) overlays from `top: 64` to
+///     `bottom: 135`.
 class VoiceHome extends ConsumerStatefulWidget {
   const VoiceHome({super.key, required this.sessionKey});
   final String sessionKey;
@@ -55,7 +58,6 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     if (svc != null) {
       _wakeWordSub = svc.triggers.listen((_) {
         if (!mounted) return;
-        // Wake word resumes (or starts) STT listening.
         unawaited(
           ref.read(voiceSessionProvider(widget.sessionKey)).startListening(),
         );
@@ -75,9 +77,6 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     _levelSub?.cancel();
     _wakeWordSub?.cancel();
     _scrollCtrl.dispose();
-    // Stop any in-flight voice session when the widget tears down. Don't
-    // hold the provider read past unmount because the ProviderScope may be
-    // gone if we're navigating out of the app.
     try {
       unawaited(ref.read(voiceSessionProvider(widget.sessionKey)).stop());
     } catch (_) {}
@@ -109,6 +108,7 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
 
   @override
   Widget build(BuildContext context) {
+    final tokens = ref.watch(tokensProvider);
     final vstate = ref.watch(voiceStateProvider);
     final active = vstate == VoiceState.listening ||
         vstate == VoiceState.userSpeaking ||
@@ -135,36 +135,43 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
-    // Full-screen aurora as a backdrop; conversation overlays on top. The
-    // glow lives at the bottom of the screen (matching the design refs).
     return Stack(
       children: [
+        // Wave stage — full-screen behind everything; wave anchored to
+        // bottom 50% of canvas.
         Positioned.fill(
           child: IgnorePointer(
             child: VoiceVisualizer(
               level: _level,
               active: active,
+              bgColor: tokens.bg,
+              silhouetteColor: tokens.silhouette,
+              silhouetteOpacity: tokens.silhouetteOpacity,
               height: double.infinity,
             ),
           ),
         ),
-        Positioned.fill(
-          child: SafeArea(
-            top: false,
-            child: _Conversation(
-              scrollCtrl: _scrollCtrl,
-              messages: messages,
-              liveUserText: (vstate == VoiceState.listening ||
-                      vstate == VoiceState.userSpeaking)
-                  ? liveUserText
-                  : '',
-              liveAiText: (vstate == VoiceState.aiSpeaking ||
-                      vstate == VoiceState.responding ||
-                      vstate == VoiceState.processing)
-                  ? liveAiText
-                  : '',
-              state: vstate,
-            ),
+
+        // Chat stage — top inset = safe-area + chatStageTop padding.
+        Positioned(
+          left: 0,
+          right: 0,
+          top: MediaQuery.of(context).padding.top + OcLayout.chatStageTop,
+          bottom: OcLayout.chatStageBottom,
+          child: _Conversation(
+            scrollCtrl: _scrollCtrl,
+            messages: messages,
+            liveUserText: (vstate == VoiceState.listening ||
+                    vstate == VoiceState.userSpeaking)
+                ? liveUserText
+                : '',
+            liveAiText: (vstate == VoiceState.aiSpeaking ||
+                    vstate == VoiceState.responding ||
+                    vstate == VoiceState.processing)
+                ? liveAiText
+                : '',
+            state: vstate,
+            tokens: tokens,
           ),
         ),
       ],
@@ -179,6 +186,7 @@ class _Conversation extends StatelessWidget {
     required this.liveUserText,
     required this.liveAiText,
     required this.state,
+    required this.tokens,
   });
 
   final ScrollController scrollCtrl;
@@ -186,14 +194,14 @@ class _Conversation extends StatelessWidget {
   final String liveUserText;
   final String liveAiText;
   final VoiceState state;
+  final OcTokens tokens;
 
   @override
   Widget build(BuildContext context) {
     final items = <Widget>[];
 
-    // While the AI is streaming, hide the last (in-progress) assistant
-    // message from the committed list and let the live subtitle render it
-    // instead — otherwise we'd show the same text twice.
+    // While the AI is streaming, suppress the in-progress assistant
+    // message from the committed list — the live subtitle handles it.
     final hideLastAssistant = liveAiText.isNotEmpty;
     Message? lastAssistant;
     if (hideLastAssistant) {
@@ -214,6 +222,7 @@ class _Conversation extends StatelessWidget {
         label: m.role == Role.user ? 'YOU' : 'AI',
         text: text,
         accent: m.role == Role.user,
+        tokens: tokens,
       ));
     }
     if (liveUserText.isNotEmpty) {
@@ -222,6 +231,7 @@ class _Conversation extends StatelessWidget {
         text: liveUserText,
         accent: true,
         muted: true,
+        tokens: tokens,
       ));
     }
     if (liveAiText.isNotEmpty) {
@@ -230,46 +240,45 @@ class _Conversation extends StatelessWidget {
         text: liveAiText,
         accent: false,
         muted: true,
+        tokens: tokens,
       ));
     } else if (state == VoiceState.processing) {
-      items.add(const _MessageBlock(
+      items.add(_MessageBlock(
         label: 'AI',
         text: '…',
         accent: false,
         muted: true,
+        tokens: tokens,
       ));
     }
 
-    return Stack(
-      children: [
-        ListView.builder(
-          controller: scrollCtrl,
-          padding: const EdgeInsets.fromLTRB(20, 28, 20, 12),
-          itemCount: items.length,
-          itemBuilder: (_, i) => items[i],
-        ),
-        // Soft fade at top of conversation, per design.
-        Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: 36,
-          child: IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF050608),
-                    const Color(0xFF050608).withValues(alpha: 0),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+    return ShaderMask(
+      // Swapped reach vs the HTML default — long fade at the top (22% of
+      // height) so messages dissolve into the panel above, short fade at
+      // the bottom (20 px) just before the controls.
+      shaderCallback: (rect) => LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: const [
+          Colors.transparent,
+          Colors.black,
+          Colors.black,
+          Colors.transparent,
+        ],
+        stops: [
+          0.0,
+          20 / rect.height,
+          0.78,
+          1.0,
+        ],
+      ).createShader(rect),
+      blendMode: BlendMode.dstIn,
+      child: ListView.builder(
+        controller: scrollCtrl,
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 64),
+        itemCount: items.length,
+        itemBuilder: (_, i) => items[i],
+      ),
     );
   }
 }
@@ -279,6 +288,7 @@ class _MessageBlock extends StatelessWidget {
     required this.label,
     required this.text,
     required this.accent,
+    required this.tokens,
     this.muted = false,
   });
 
@@ -286,34 +296,34 @@ class _MessageBlock extends StatelessWidget {
   final String text;
   final bool accent;
   final bool muted;
+  final OcTokens tokens;
 
   @override
   Widget build(BuildContext context) {
+    final labelColor = accent ? tokens.accent : tokens.textMuted;
+    final bodyColor = muted ? tokens.textSoft : tokens.text;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(bottom: 22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w600,
-              letterSpacing: 0.4,
-              color: accent
-                  ? const Color(0xFF6E8CFF)
-                  : Colors.white.withValues(alpha: 0.45),
+              letterSpacing: 0.18 * 11,
+              color: labelColor,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             text,
             style: TextStyle(
-              fontSize: 16,
-              height: 1.5,
-              color: muted
-                  ? Colors.white.withValues(alpha: 0.55)
-                  : Colors.white.withValues(alpha: 0.92),
+              fontSize: 14,
+              height: 1.45,
+              letterSpacing: -0.005 * 14,
+              color: bodyColor,
             ),
           ),
         ],
@@ -321,4 +331,3 @@ class _MessageBlock extends StatelessWidget {
     );
   }
 }
-

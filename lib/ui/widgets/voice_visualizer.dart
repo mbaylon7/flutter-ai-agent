@@ -31,12 +31,25 @@ class VoiceVisualizer extends StatefulWidget {
     super.key,
     required this.level,
     required this.active,
+    required this.bgColor,
+    required this.silhouetteColor,
+    required this.silhouetteOpacity,
     this.height = 220,
   });
 
   /// Mic level (0..1). Unused by the design but kept for API parity.
   final double level;
   final bool active;
+
+  /// Canvas background (matches `--bg`).
+  final Color bgColor;
+
+  /// Silhouette fill (matches `--silhouette`).
+  final Color silhouetteColor;
+
+  /// Silhouette opacity (matches `--silhouette-opacity`).
+  final double silhouetteOpacity;
+
   final double height;
 
   @override
@@ -79,11 +92,31 @@ class _VoiceVisualizerState extends State<VoiceVisualizer>
         ((elapsed - last).inMicroseconds / 1e6).clamp(0.0, 0.05).toDouble();
     _lastTick = elapsed;
 
-    final target = widget.active ? _listening : _calm;
-    final targetSpeed = widget.active ? _listeningSpeed : _calmSpeed;
+    // Three motion states:
+    //
+    //   • active=false              → CALM. Almost-flat drift; used in chat
+    //     mode (mic closed) and on the home screen at rest.
+    //   • active=true, level≈0      → LISTENING. Big-but-stable wave; mic is
+    //     open, user silent. Visually says "I'm here, listening".
+    //   • active=true, level>0      → REACTIVE. Same LISTENING base, but the
+    //     amplitudes scale with the live mic level so the wave heaves with
+    //     the user's voice in real time.
+    final base = widget.active ? _listening : _calm;
+    // Light reactive boost — level=1.0 only bumps amps by ~1.5×, not the
+    // 2.8× we had before (the wave was overshooting the chat area).
+    final levelBoost =
+        widget.active ? 1.0 + widget.level.clamp(0.0, 1.0) * 0.5 : 1.0;
+    final target = [
+      base[0] * levelBoost,
+      base[1] * levelBoost,
+      base[2] * levelBoost,
+    ];
+    final targetSpeed = widget.active
+        ? _listeningSpeed + widget.level.clamp(0.0, 1.0) * 0.2
+        : _calmSpeed;
 
-    // Same lerp shape as the HTML: `1 - 0.0001^dt`. Reaches target slowly
-    // at low dt and pops faster at high dt — feels organic.
+    // Same lerp shape as the HTML: `1 - 0.0001^dt`. Reaches the target
+    // slowly at low dt and pops faster at high dt — feels organic.
     final lerp = 1 - pow(0.0001, dt).toDouble();
     _a0 += (target[0] - _a0) * lerp;
     _a1 += (target[1] - _a1) * lerp;
@@ -98,7 +131,13 @@ class _VoiceVisualizerState extends State<VoiceVisualizer>
   @override
   Widget build(BuildContext context) {
     final painter = CustomPaint(
-      painter: _WavePainter(t: _t, amps: [_a0, _a1, _a2]),
+      painter: _WavePainter(
+        t: _t,
+        amps: [_a0, _a1, _a2],
+        bgColor: widget.bgColor,
+        silhouetteColor: widget.silhouetteColor,
+        silhouetteOpacity: widget.silhouetteOpacity,
+      ),
       size: Size.infinite,
     );
     if (widget.height.isInfinite) return painter;
@@ -107,14 +146,24 @@ class _VoiceVisualizerState extends State<VoiceVisualizer>
 }
 
 class _WavePainter extends CustomPainter {
-  _WavePainter({required this.t, required this.amps});
+  _WavePainter({
+    required this.t,
+    required this.amps,
+    required this.bgColor,
+    required this.silhouetteColor,
+    required this.silhouetteOpacity,
+  });
 
   final double t;
   final List<double> amps;
+  final Color bgColor;
+  final Color silhouetteColor;
+  final double silhouetteOpacity;
 
-  // Wave-stage occupies the bottom half of the painter canvas — matches the
-  // HTML's `.wave-stage { bottom: 0; height: 50% }` rule.
-  static const _stageTopRatio = 0.5;
+  // Wave-stage occupies the bottom ~40 % of the painter canvas (was 50 %
+  // in the HTML). Lower stage leaves more breathing room for the chat
+  // panel above and keeps the aurora visually "below" the conversation.
+  static const _stageTopRatio = 0.60;
   // SVG viewBox is 400x400; baseY=230 → wave baseline at 57.5 % of stage.
   static const _baseYInStage = 230.0 / 400.0;
   // Path resolution (HTML uses STEPS = 72).
@@ -138,9 +187,6 @@ class _WavePainter extends CustomPainter {
     [230, 80,  80],  // red
   ];
 
-  // Silhouette colour (dark mode only — `--silhouette: #000` at 0.86).
-  static const _silhouetteColor = Color.fromRGBO(0, 0, 0, 0.86);
-
   // Mirror fill base opacity.
   static const _mirrorAlpha = 0.7;
 
@@ -157,8 +203,8 @@ class _WavePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Background — same as the HTML `var(--bg) = #000` in dark mode.
-    canvas.drawRect(Offset.zero & size, Paint()..color = const Color(0xFF000000));
+    // Background — `--bg` from the active theme.
+    canvas.drawRect(Offset.zero & size, Paint()..color = bgColor);
 
     final stageTop = size.height * _stageTopRatio;
     final stageHeight = size.height - stageTop;
@@ -217,7 +263,10 @@ class _WavePainter extends CustomPainter {
         width: coreStroke, sigma: coreSigma, alpha: 0.85);
 
     // --- Silhouette fill (clips bottom half of the blurred glows) ---
-    canvas.drawPath(fillPath, Paint()..color = _silhouetteColor);
+    canvas.drawPath(
+      fillPath,
+      Paint()..color = silhouetteColor.withValues(alpha: silhouetteOpacity),
+    );
 
     // --- Wave mirror: palette fill with vertical depth fade ---
     _drawMirror(canvas, fillPath, paletteShader, size,
@@ -284,5 +333,8 @@ class _WavePainter extends CustomPainter {
       old.t != t ||
       old.amps[0] != amps[0] ||
       old.amps[1] != amps[1] ||
-      old.amps[2] != amps[2];
+      old.amps[2] != amps[2] ||
+      old.bgColor != bgColor ||
+      old.silhouetteColor != silhouetteColor ||
+      old.silhouetteOpacity != silhouetteOpacity;
 }

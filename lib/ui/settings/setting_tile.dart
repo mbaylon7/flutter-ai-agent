@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:stt_tts/core/theme.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stt_tts/state/theme_provider.dart';
 
-class SettingTile extends StatelessWidget {
+/// Shared settings row — rounded card with icon · text · trailing.
+/// Matches `.setting-card` in the HTML design (surface bg, 14 px radius,
+/// 1 px border, 13 px title / 11.5 px subtitle).
+class SettingTile extends ConsumerWidget {
   const SettingTile({
     super.key,
     required this.icon,
@@ -18,38 +22,57 @@ class SettingTile extends StatelessWidget {
   final VoidCallback? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-        child: Row(
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: OcColors.overlayTint,
-                borderRadius: BorderRadius.circular(8),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = ref.watch(tokensProvider);
+    return Material(
+      color: tokens.surface,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: tokens.border, width: 1),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: tokens.textSoft, size: 20),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        color: tokens.text,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: tokens.textMuted,
+                          fontSize: 11.5,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-              child: Icon(icon, color: OcColors.textSubtitle, size: 14),
-            ),
-            const SizedBox(width: 11),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: const TextStyle(color: OcColors.textPrimary, fontSize: 13)),
-                  if (subtitle != null)
-                    Text(subtitle!,
-                        style: const TextStyle(color: OcColors.textSubtitle, fontSize: 11),
-                        overflow: TextOverflow.ellipsis),
-                ],
-              ),
-            ),
-            ?trailing,
-          ],
+              if (trailing != null) ...[
+                const SizedBox(width: 8),
+                trailing!,
+              ],
+            ],
+          ),
         ),
       ),
     );

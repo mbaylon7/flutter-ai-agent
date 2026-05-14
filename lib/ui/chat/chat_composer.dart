@@ -2,18 +2,22 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stt_tts/core/design_tokens.dart';
 import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/domain/models/session.dart';
 import 'package:stt_tts/domain/repositories/chat_repository.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
+import 'package:stt_tts/state/theme_provider.dart';
 import 'package:uuid/uuid.dart';
 
-/// Minimal chat input for the unified voice-focused shell.
+/// Minimal chat input rendered at `bottom: 141` (see `OcLayout`).
 ///
-/// No border, no background, no placeholder. A thicker-than-default blinking
-/// cursor sits centered when empty; as the user types the text grows outward
-/// from the center. Submit via the keyboard's send key.
+/// The HTML keeps the real `<input>` invisible and renders a separate
+/// `.chat-input-display` with a custom thick caret animation, so the caret
+/// is always visible whether or not the field has focus. We mirror that
+/// behaviour with a transparent TextField stacked under a typed-text +
+/// caret display layer.
 class ChatComposer extends ConsumerStatefulWidget {
   const ChatComposer({super.key});
 
@@ -24,15 +28,21 @@ class ChatComposer extends ConsumerStatefulWidget {
 class _ChatComposerState extends ConsumerState<ChatComposer> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  String _text = '';
 
   @override
   void initState() {
     super.initState();
-    // Request focus so the system caret is visible immediately when the user
-    // flips to chat mode. The keyboard opens; system back dismisses it but
-    // preserves focus, so the caret keeps blinking.
+    _controller.addListener(() {
+      if (_text != _controller.text) {
+        setState(() => _text = _controller.text);
+      }
+    });
+    // Mirror the HTML which focuses the input ~220 ms after mode switch.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
+      Future.delayed(const Duration(milliseconds: 220), () {
+        if (mounted) _focusNode.requestFocus();
+      });
     });
   }
 
@@ -68,7 +78,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       await ref
           .read(chatRepositoryProvider)
           .send(sessionKey: key, text: text);
-
       if (isFirstMessage) {
         unawaited(_popSessionWhenAiResponds(
           sessionKey: key,
@@ -126,30 +135,125 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = ref.watch(tokensProvider);
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 4, 24, 4),
-      child: TextField(
-        key: const Key('composer_text_field'),
-        controller: _controller,
-        focusNode: _focusNode,
-        textAlign: TextAlign.center,
-        textAlignVertical: TextAlignVertical.center,
-        minLines: 1,
-        maxLines: 4,
-        textInputAction: TextInputAction.send,
-        onSubmitted: (_) => _send(),
-        cursorWidth: 3,
-        cursorRadius: const Radius.circular(1.5),
-        cursorColor: Colors.white,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          height: 1.4,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _focusNode.requestFocus,
+        child: SizedBox(
+          height: 44, // min-height from `.chat-input-wrap`
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Transparent real TextField captures focus + key events.
+              TextField(
+                key: const Key('composer_text_field'),
+                controller: _controller,
+                focusNode: _focusNode,
+                textAlign: TextAlign.center,
+                textAlignVertical: TextAlignVertical.center,
+                minLines: 1,
+                maxLines: 4,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _send(),
+                cursorColor: Colors.transparent,
+                style: const TextStyle(
+                  color: Colors.transparent,
+                  fontSize: 15,
+                  height: 1.45,
+                ),
+                decoration: const InputDecoration.collapsed(hintText: null),
+              ),
+              // Custom display: typed text + thicker blinking caret.
+              IgnorePointer(
+                child: _Display(text: _text, tokens: tokens),
+              ),
+            ],
+          ),
         ),
-        // Collapsed decoration → no underline, no border, no fill, no
-        // contentPadding from the decorator itself. We add our own padding
-        // around the TextField at the parent level if needed.
-        decoration: const InputDecoration.collapsed(hintText: null),
+      ),
+    );
+  }
+}
+
+class _Display extends StatelessWidget {
+  const _Display({required this.text, required this.tokens});
+
+  final String text;
+  final OcTokens tokens;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (text.isNotEmpty)
+          Flexible(
+            child: Text(
+              text,
+              textAlign: TextAlign.center,
+              softWrap: true,
+              overflow: TextOverflow.visible,
+              style: TextStyle(
+                color: tokens.text,
+                fontSize: 15,
+                height: 1.45,
+                letterSpacing: -0.005 * 15,
+              ),
+            ),
+          ),
+        _Caret(color: tokens.text),
+      ],
+    );
+  }
+}
+
+/// Thick blinking caret. Square-wave blink at 1.1 s — matches the HTML
+/// `@keyframes caret-blink`.
+class _Caret extends StatefulWidget {
+  const _Caret({required this.color});
+  final Color color;
+
+  @override
+  State<_Caret> createState() => _CaretState();
+}
+
+class _CaretState extends State<_Caret>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, child) {
+        final on = _ctrl.value < 0.5;
+        return Opacity(opacity: on ? 0.95 : 0.0, child: child);
+      },
+      child: Container(
+        width: 3,
+        height: 15 * 1.05, // matches CSS `height: 1.05em` with em=15px
+        margin: const EdgeInsets.only(left: 1),
+        color: widget.color,
       ),
     );
   }
