@@ -139,7 +139,9 @@ class OpenClawGatewayClient implements GatewayClient {
 
   void _ensureEventRouter() {
     if (_eventSub != null) return;
-    _eventSub = _conn!.frames.listen((f) {
+    final conn = _conn;
+    if (conn == null) return; // Phase 1 bypass: no socket, no router.
+    _eventSub = conn.frames.listen((f) {
       if (f is! EventFrame) return;
       _routeEvent(f);
     });
@@ -211,6 +213,7 @@ class OpenClawGatewayClient implements GatewayClient {
   @override
   Future<List<Session>> listSessions() async {
     _ensureEventRouter();
+    if (_rpc == null) return const []; // Phase 1 bypass.
     final res = await _rpc!.request(
       method: 'sessions.list',
       params: const {},
@@ -229,6 +232,7 @@ class OpenClawGatewayClient implements GatewayClient {
 
   @override
   Future<void> patchSession(String sessionKey, {String? title}) async {
+    if (_rpc == null) return; // Phase 1 bypass.
     final params = <String, dynamic>{'key': sessionKey};
     if (title != null) params['label'] = title;
     await _rpc!.request(method: 'sessions.patch', params: params);
@@ -236,6 +240,7 @@ class OpenClawGatewayClient implements GatewayClient {
 
   @override
   Future<void> deleteSession(String sessionKey) async {
+    if (_rpc == null) return; // Phase 1 bypass.
     await _rpc!.request(
       method: 'sessions.delete',
       params: {'sessionKey': sessionKey},
@@ -247,6 +252,7 @@ class OpenClawGatewayClient implements GatewayClient {
   @override
   Future<List<Message>> loadHistory(String sessionKey) async {
     _ensureEventRouter();
+    if (_rpc == null) return const []; // Phase 1 bypass.
     final res = await _rpc!.request(
       method: 'chat.history',
       params: {'sessionKey': sessionKey},
@@ -268,6 +274,9 @@ class OpenClawGatewayClient implements GatewayClient {
     required String idempotencyKey,
   }) async {
     _ensureEventRouter();
+    if (_rpc == null) {
+      return ChatRun(runId: 'phase1-bypass', sessionKey: sessionKey);
+    }
     final res = await _rpc!.request(
       method: 'chat.send',
       params: {
@@ -290,6 +299,7 @@ class OpenClawGatewayClient implements GatewayClient {
 
   @override
   Future<void> abort(String runId) async {
+    if (_rpc == null) return; // Phase 1 bypass.
     await _rpc!.request(method: 'chat.abort', params: {'runId': runId});
   }
 }

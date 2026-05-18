@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:stt_tts/data/voice/tts_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/design_tokens.dart';
 import 'package:stt_tts/data/permissions/permissions.dart';
@@ -40,6 +42,9 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
 
   StreamSubscription<double>? _levelSub;
   StreamSubscription<void>? _wakeWordSub;
+  StreamSubscription<TtsStatus>? _ttsStatusSub;
+  Timer? _ttsLevelTimer;
+  final _ttsRng = math.Random();
 
   @override
   void initState() {
@@ -50,6 +55,26 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     _levelSub = stt.normalizedLevel.listen((l) {
       if (!mounted) return;
       setState(() => _level = l);
+    });
+
+    // Drive the visualizer when the AI is speaking. STT is stopped during
+    // TTS playback, so its level stream goes silent — without this the wave
+    // sits at its base "listening" amplitude with no motion while the AI
+    // talks. Synthesizes a varying level pulsed at ~12 Hz.
+    final tts = ref.read(ttsServiceProvider);
+    _ttsStatusSub = tts.status.listen((s) {
+      if (!mounted) return;
+      if (s == TtsStatus.speaking) {
+        _ttsLevelTimer?.cancel();
+        _ttsLevelTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+          if (!mounted) return;
+          setState(() => _level = 0.35 + _ttsRng.nextDouble() * 0.55);
+        });
+      } else {
+        _ttsLevelTimer?.cancel();
+        _ttsLevelTimer = null;
+        setState(() => _level = 0);
+      }
     });
 
     final wakeCtrl = ref.read(wakeWordControllerProvider);
@@ -76,6 +101,8 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
     WidgetsBinding.instance.removeObserver(this);
     _levelSub?.cancel();
     _wakeWordSub?.cancel();
+    _ttsStatusSub?.cancel();
+    _ttsLevelTimer?.cancel();
     _scrollCtrl.dispose();
     try {
       unawaited(ref.read(voiceSessionProvider(widget.sessionKey)).stop());

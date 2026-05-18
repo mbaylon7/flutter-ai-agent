@@ -69,8 +69,20 @@ const _kAutoPairWsUrls = <String>[
 ];
 const _kAutoPairToken = 'c60074f7-c5fb-493b-a3a0-d6fe08d47a9a';
 
+/// Phase 1 flag — when true the auto-reconnect controller short-circuits
+/// to a fake "connected" state without ever touching the gateway. This lets
+/// us validate the on-device Sherpa-ONNX STT/TTS pipeline against the
+/// existing UI shell (history drawer, voice/chat modes, theme, settings)
+/// without requiring network or a paired openclaw server. Flip to `false`
+/// in Phase 2 to re-enable the real reconnect path.
+const _kPhase1BypassGateway = true;
+
 class AutoReconnectController extends StateNotifier<AsyncValue<bool>> {
   AutoReconnectController(this._ref) : super(const AsyncValue.loading()) {
+    if (_kPhase1BypassGateway) {
+      state = const AsyncValue.data(true);
+      return;
+    }
     _attempt();
   }
 

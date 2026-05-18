@@ -1,170 +1,193 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
-import 'package:stt_tts/data/voice/voice_constants.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+import 'package:stt_tts/data/voice/sherpa_assets.dart';
 
+/// On-device text-to-speech backed by Sherpa-ONNX (Piper VITS model).
+/// Replaces the flutter_tts/Google-engine implementation — there is no
+/// dependency on Google services and TTS runs fully offline.
+///
+/// Public API mirrors the previous service so [VoiceSession] and the
+/// settings screen don't need to change. The voice-list-related APIs
+/// ([voices], [selectVoice]) are kept for compatibility but only expose the
+/// speaker IDs baked into the multi-speaker libritts_r model.
 class TtsService {
-  final FlutterTts _tts = FlutterTts();
+  static const _modelDir = 'assets/models/vits-piper-en_US-libritts_r-medium';
+  static const _modelFile = 'en_US-libritts_r-medium.onnx';
+
+  sherpa.OfflineTts? _tts;
+  AudioPlayer? _player;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<void>? _completeSub;
+
   bool _ready = false;
   bool _speaking = false;
 
-  // Streaming-mode queue. When `enqueueChunk` is used, [_awaitCompletion]
-  // becomes true so `_tts.speak` awaits the engine's completion handler —
-  // letting us drain chunks sequentially without gaps. The legacy `speak()`
-  // method (used by settings preview and the legacy one-shot voice flow)
-  // switches back to fire-and-forget mode.
+  // Curated speaker picks from the libritts_r-medium 904-speaker model.
+  // Gender labels are pulled from the LibriSpeech SPEAKERS.TXT manifest
+  // (LibriTTS shares reader IDs with LibriSpeech). All six are from
+  // train-clean-360 with ~25 min of speech each — the subset Piper was
+  // fine-tuned on, so they're well-represented in the model.
+  //
+  // Key format is `libritts_r-<piperId>` so [selectVoice] can decode it
+  // without an external lookup table.
+  static const List<Map<String, String>> _curatedVoices = [
+    {'key': 'libritts_r-9',   'name': 'Amanda',   'gender': 'Female', 'piperId': '9'},
+    {'key': 'libritts_r-313', 'name': 'Nicole',   'gender': 'Female', 'piperId': '313'},
+    {'key': 'libritts_r-731', 'name': 'Jeanette', 'gender': 'Female', 'piperId': '731'},
+    {'key': 'libritts_r-16',  'name': 'Anthony',  'gender': 'Male',   'piperId': '16'},
+    {'key': 'libritts_r-438', 'name': 'Todd',     'gender': 'Male',   'piperId': '438'},
+    {'key': 'libritts_r-898', 'name': 'Eric',     'gender': 'Male',   'piperId': '898'},
+  ];
+
+  static const _defaultSpeakerId = 9; // Amanda (Female)
+  int _speakerId = _defaultSpeakerId;
+  final double _speed = 0.8;
+
+  // Chunk queue for back-to-back synthesis. enqueueChunk() appends; _drain()
+  // walks the queue and plays each utterance in turn.
   final Queue<String> _chunkQueue = Queue<String>();
   bool _draining = false;
   Completer<void>? _drainedCompleter;
-  bool _awaitCompletion = false;
 
-  List<Map<String, String>> _voices = [];
-  String? _selectedVoiceKey;
+  // Progress tracking for word-by-word subtitle. Each TTS utterance is
+  // played as a single audio file; we use audioplayers' position events to
+  // linearly interpolate which word is currently being spoken.
+  String _currentText = '';
+  List<String> _currentWords = const [];
+  Duration _currentDuration = Duration.zero;
 
   final _statusCtl = StreamController<TtsStatus>.broadcast();
   final _progressCtl = StreamController<TtsProgress>.broadcast();
 
   Stream<TtsStatus> get status => _statusCtl.stream;
-  /// Per-word boundary progress for karaoke highlight.
   Stream<TtsProgress> get progress => _progressCtl.stream;
-
-  Future<void> init() async {
-    _tts.setStartHandler(() {
-      _speaking = true;
-      _statusCtl.add(TtsStatus.speaking);
-    });
-    _tts.setCompletionHandler(() {
-      _speaking = false;
-      _statusCtl.add(TtsStatus.idle);
-    });
-    _tts.setCancelHandler(() {
-      _speaking = false;
-      _statusCtl.add(TtsStatus.idle);
-    });
-    _tts.setErrorHandler((m) {
-      _speaking = false;
-      _statusCtl.add(TtsStatus.failed);
-    });
-    _tts.setProgressHandler((text, start, end, word) {
-      _progressCtl.add(TtsProgress(text: text, wordStart: start, wordEnd: end, word: word));
-    });
-
-    // Per-call budgets: a hung TTS engine (common on emulators with no voice
-    // data) must not stall init forever. Each platform call gets a short
-    // timeout; on TimeoutException we mark TTS unavailable and bail. speak()
-    // already no-ops when !_ready, so the app remains usable for STT-only.
-    const callBudget = Duration(seconds: 3);
-    const queryBudget = Duration(seconds: 4);
-    try {
-      await _tts.awaitSpeakCompletion(false).timeout(callBudget);
-      try {
-        await _tts.setEngine('com.google.android.tts').timeout(callBudget);
-      } catch (_) {/* fall back to system default engine */}
-      await _tts.setVolume(1.0).timeout(callBudget);
-      await _tts.setSpeechRate(VoiceConstants.speechRate).timeout(callBudget);
-      await _tts.setPitch(VoiceConstants.pitch).timeout(callBudget);
-
-      final lang = await _pickPreferredLanguage().timeout(
-        queryBudget,
-        onTimeout: () => 'en-US',
-      );
-      await _tts.setLanguage(lang).timeout(callBudget);
-      _voices = await _loadVoicesForLanguage(lang).timeout(
-        queryBudget,
-        onTimeout: () => <Map<String, String>>[],
-      );
-      final preferred = _pickPreferredVoice(_voices);
-      if (preferred != null) {
-        try {
-          await _tts.setVoice({
-            'name': preferred['name']!,
-            'locale': preferred['locale']!,
-          }).timeout(callBudget);
-        } catch (_) {/* keep going — voice selection is best-effort */}
-        _selectedVoiceKey = _voiceKey(preferred);
-      } else if (_voices.isNotEmpty) {
-        _selectedVoiceKey = _voiceKey(_voices.first);
-      }
-      _ready = true;
-    } on TimeoutException {
-      _ready = false;
-    } on MissingPluginException {
-      _ready = false;
-    } on PlatformException {
-      _ready = false;
-    }
-  }
 
   bool get isReady => _ready;
   bool get isSpeaking => _speaking;
-  List<Map<String, String>> get voices => List.unmodifiable(_voices);
-  String? get selectedVoiceKey => _selectedVoiceKey;
+  // The libritts_r model has multiple speakers; we expose them as a flat
+  // list of {name, locale} entries for the existing voice-picker UI.
+  List<Map<String, String>> get voices => _curatedVoices
+      .map((v) => {
+            'name': '${v['name']} (${v['gender']})',
+            'locale': 'en-US',
+            'key': v['key']!,
+          })
+      .toList(growable: false);
+  String? get selectedVoiceKey => 'libritts_r-$_speakerId';
+
+  Future<void> init() async {
+    try {
+      sherpa.initBindings();
+
+      final modelPath = await copyAssetFile('$_modelDir/$_modelFile');
+      final tokens = await copyAssetFile('$_modelDir/tokens.txt');
+      final dataDir = await copyAssetDir('$_modelDir/espeak-ng-data');
+
+      final vits = sherpa.OfflineTtsVitsModelConfig(
+        model: modelPath,
+        tokens: tokens,
+        dataDir: dataDir,
+      );
+      final modelConfig = sherpa.OfflineTtsModelConfig(
+        vits: vits,
+        numThreads: 2,
+        debug: false,
+        provider: 'cpu',
+      );
+      final ttsConfig = sherpa.OfflineTtsConfig(model: modelConfig);
+      _tts = sherpa.OfflineTts(ttsConfig);
+
+      _player = AudioPlayer();
+      _positionSub = _player!.onPositionChanged.listen(_onPosition);
+      _completeSub = _player!.onPlayerComplete.listen((_) => _onComplete());
+
+      _ready = true;
+    } on PlatformException catch (e, st) {
+      // ignore: avoid_print
+      print('[TtsService.init] PlatformException: $e\n$st');
+      _ready = false;
+    } on MissingPluginException catch (e, st) {
+      // ignore: avoid_print
+      print('[TtsService.init] MissingPluginException: $e\n$st');
+      _ready = false;
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[TtsService.init] FAILED: $e\n$st');
+      _ready = false;
+    }
+  }
 
   Future<void> speak(String text) async {
-    if (!_ready) return;
-    try {
-      await _ensureAwaitMode(false);
-      await _tts.stop();
-      await Future.delayed(const Duration(milliseconds: 50));
-      await _tts.speak(text);
-    } on PlatformException catch (_) {
-      _statusCtl.add(TtsStatus.failed);
-    }
+    await clearQueue();
+    await enqueueChunk(text);
+    return awaitDrained();
   }
 
-  /// Append [text] to the streaming chunk queue and start draining if idle.
-  ///
-  /// Returns immediately. Use [awaitDrained] to wait for the queue to empty.
-  /// Empty / whitespace-only chunks are silently ignored.
   Future<void> enqueueChunk(String text) async {
-    if (!_ready) return;
-    final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
-    _chunkQueue.add(trimmed);
+    final t = text.trim();
+    if (t.isEmpty) return;
+    _chunkQueue.add(t);
+    _drainedCompleter ??= Completer<void>();
     if (!_draining) {
-      _draining = true;
-      _drainedCompleter ??= Completer<void>();
-      // Fire-and-forget the drain loop; awaitDrained() is the way to wait.
-      unawaited(_drain());
+      // ignore: discarded_futures — fire-and-forget; awaiting is via awaitDrained
+      _drain();
     }
   }
 
-  /// Resolves the next time the chunk queue empties. If the queue is already
-  /// empty (and not draining) this returns immediately.
   Future<void> awaitDrained() {
     if (!_draining && _chunkQueue.isEmpty) return Future.value();
     _drainedCompleter ??= Completer<void>();
     return _drainedCompleter!.future;
   }
 
-  /// Stop the current utterance and discard any queued chunks.
   Future<void> clearQueue() async {
     _chunkQueue.clear();
-    await _tts.stop();
     _draining = false;
+    if (_player != null) {
+      try {
+        await _player!.stop();
+      } catch (_) {/* best-effort */}
+    }
+    _speaking = false;
+    _statusCtl.add(TtsStatus.idle);
     if (_drainedCompleter != null && !_drainedCompleter!.isCompleted) {
       _drainedCompleter!.complete();
     }
     _drainedCompleter = null;
   }
 
+  Future<void> stop() => clearQueue();
+
   Future<void> _drain() async {
+    if (_tts == null || _player == null) return;
+    _draining = true;
     try {
-      await _ensureAwaitMode(true);
+      String? previousChunk;
       while (_chunkQueue.isNotEmpty) {
-        final next = _chunkQueue.removeFirst();
-        try {
-          // With awaitSpeakCompletion(true) this returns when the utterance
-          // finishes, giving back-to-back playback without our own pause.
-          await _tts.speak(next);
-        } on PlatformException catch (_) {
-          _statusCtl.add(TtsStatus.failed);
+        final text = _chunkQueue.removeFirst();
+        if (previousChunk != null) {
+          // Pause length depends on the previous chunk's ending punctuation:
+          // commas get a short breath, sentence terminators get a longer
+          // beat. Falls back to a small generic gap for chunks without
+          // trailing punctuation (e.g. force-split unpunctuated monologues).
+          final lastCh = previousChunk[previousChunk.length - 1];
+          final ms = lastCh == ',' ? 80 : 150;
+          await Future<void>.delayed(Duration(milliseconds: ms));
         }
+        previousChunk = text;
+        await _synthesizeAndPlay(text);
       }
     } finally {
       _draining = false;
+      _speaking = false;
+      _statusCtl.add(TtsStatus.idle);
       if (_drainedCompleter != null && !_drainedCompleter!.isCompleted) {
         _drainedCompleter!.complete();
       }
@@ -172,167 +195,109 @@ class TtsService {
     }
   }
 
-  Future<void> _ensureAwaitMode(bool desired) async {
-    if (_awaitCompletion == desired) return;
-    try {
-      await _tts.awaitSpeakCompletion(desired);
-      _awaitCompletion = desired;
-    } catch (_) {/* best-effort; engine may not support toggling mid-life */}
+  Future<void> _synthesizeAndPlay(String text) async {
+    final tts = _tts!;
+    final player = _player!;
+
+    final genConfig = sherpa.OfflineTtsGenerationConfig(
+      sid: _speakerId,
+      speed: _speed,
+    );
+    final audio = tts.generateWithConfig(text: text, config: genConfig);
+
+    // Write the generated PCM to a temporary WAV file so audioplayers can
+    // play it. In-memory PCM playback would be lower-latency but requires
+    // an extra plugin; the WAV path is a Phase 1 shortcut.
+    final tmp = await _writeWav(audio.samples, audio.sampleRate);
+
+    _currentText = text;
+    _currentWords = _splitWords(text);
+    _currentDuration = Duration(
+      milliseconds: ((audio.samples.length / audio.sampleRate) * 1000).round(),
+    );
+    _speaking = true;
+    _statusCtl.add(TtsStatus.speaking);
+
+    // Emit an initial progress event so the subtitle can render the full
+    // text immediately with the cursor at word 0.
+    _progressCtl.add(TtsProgress(
+      text: text,
+      wordStart: 0,
+      wordEnd: _currentWords.isNotEmpty ? _currentWords.first.length : 0,
+      word: _currentWords.isNotEmpty ? _currentWords.first : '',
+    ));
+
+    final completer = Completer<void>();
+    _activeChunkCompleter = completer;
+    await player.play(DeviceFileSource(tmp.path));
+    await completer.future;
   }
 
-  Future<void> stop() async {
-    _chunkQueue.clear();
-    _draining = false;
-    if (_drainedCompleter != null && !_drainedCompleter!.isCompleted) {
-      _drainedCompleter!.complete();
+  Completer<void>? _activeChunkCompleter;
+
+  void _onPosition(Duration pos) {
+    if (_currentWords.isEmpty || _currentDuration == Duration.zero) return;
+    final fraction =
+        (pos.inMilliseconds / _currentDuration.inMilliseconds).clamp(0.0, 1.0);
+    final idx = (fraction * _currentWords.length).floor()
+        .clamp(0, _currentWords.length - 1);
+
+    // Word boundaries in [_currentText] (assuming single-space separation
+    // after _splitWords cleaned it up).
+    var start = 0;
+    for (var i = 0; i < idx; i++) {
+      start += _currentWords[i].length + 1;
     }
-    _drainedCompleter = null;
-    await _tts.stop();
+    final word = _currentWords[idx];
+    _progressCtl.add(TtsProgress(
+      text: _currentText,
+      wordStart: start,
+      wordEnd: start + word.length,
+      word: word,
+    ));
+  }
+
+  void _onComplete() {
+    final c = _activeChunkCompleter;
+    _activeChunkCompleter = null;
+    if (c != null && !c.isCompleted) c.complete();
+  }
+
+  Future<File> _writeWav(dynamic samples, int sampleRate) async {
+    final dir = await getTemporaryDirectory();
+    final path = p.join(dir.path,
+        'sherpa-tts-${DateTime.now().millisecondsSinceEpoch}.wav');
+    sherpa.writeWave(filename: path, samples: samples, sampleRate: sampleRate);
+    return File(path);
+  }
+
+  List<String> _splitWords(String text) {
+    return text
+        .split(RegExp(r'\s+'))
+        .where((w) => w.isNotEmpty)
+        .toList(growable: false);
   }
 
   Future<void> selectVoice(String key) async {
-    final v = _voices.firstWhere((vv) => _voiceKey(vv) == key, orElse: () => {});
-    if (v.isEmpty) return;
-    // flutter_tts.setVoice only expects {name, locale}; strip our extras.
-    await _tts.setVoice({'name': v['name']!, 'locale': v['locale']!});
-    _selectedVoiceKey = key;
-  }
-
-  // ===== picking logic — lifted from POC =====
-  Future<String> _pickPreferredLanguage() async {
-    try {
-      final raw = await _tts.getLanguages;
-      final langs = <String>[];
-      if (raw is List) {
-        for (final i in raw) {
-          final s = i.toString();
-          if (s.isNotEmpty) langs.add(s);
-        }
-      }
-      const preferred = ['en-US','en_US','en-GB','en_GB'];
-      for (final l in preferred) { if (langs.contains(l)) return l; }
-      final en = langs.where((l) => l.toLowerCase().startsWith('en')).toList();
-      if (en.isNotEmpty) return en.first;
-      if (langs.isNotEmpty) return langs.first;
-    } catch (_) {}
-    return 'en-US';
-  }
-
-  Future<List<Map<String,String>>> _loadVoicesForLanguage(String lang) async {
-    final raw = await _tts.getVoices;
-    final n = lang.toLowerCase().replaceAll('_', '-');
-    final prefix = n.split('-').first;
-    final all = <Map<String,String>>[];
-    if (raw is List) {
-      for (final v in raw) {
-        if (v is Map) {
-          final name = v['name']?.toString();
-          final locale = v['locale']?.toString();
-          if (name != null && locale != null) {
-            final nl = locale.toLowerCase().replaceAll('_','-');
-            if (nl == n || nl.startsWith(prefix)) {
-              final m = {'name': name, 'locale': locale};
-              final g = _voiceGender(name);
-              if (g != null) m['gender'] = g;
-              // Carry quality hints when the platform exposes them — used by
-              // _voiceScore to prefer high-quality network voices.
-              final net = v['network_required']?.toString();
-              if (net != null) m['network_required'] = net;
-              final q = v['quality']?.toString();
-              if (q != null) m['quality'] = q;
-              all.add(m);
-            }
-          }
-        }
-      }
+    // Accept either the raw `libritts_r-<id>` key or a legacy
+    // `<key>|<locale>` composite the existing picker still emits.
+    final base = key.contains('|') ? key.split('|').first : key;
+    final match = RegExp(r'^libritts_r-(\d+)$').firstMatch(base);
+    final candidate =
+        match != null ? int.tryParse(match.group(1)!) : null;
+    if (candidate != null &&
+        _curatedVoices.any((v) => v['piperId'] == candidate.toString())) {
+      _speakerId = candidate;
     }
-    all.sort((a,b) => _voiceScore(b).compareTo(_voiceScore(a)));
-
-    // Keep top 2 male + top 2 female (by score). Falls back to any remaining
-    // voices to fill 4 slots if a gender is missing on this device.
-    final males = all.where((v) => v['gender'] == 'male').take(2).toList();
-    final females = all.where((v) => v['gender'] == 'female').take(2).toList();
-    final picked = <Map<String,String>>[];
-    for (var i = 0; i < 2; i++) {
-      if (i < females.length) picked.add({...females[i], 'label': 'Female ${i + 1}'});
-      if (i < males.length) picked.add({...males[i], 'label': 'Male ${i + 1}'});
-    }
-    if (picked.length < 4) {
-      final remaining = all.where((v) => !picked.any((p) =>
-          p['name'] == v['name'] && p['locale'] == v['locale']));
-      for (final v in remaining) {
-        if (picked.length >= 4) break;
-        picked.add({...v, 'label': 'Voice ${picked.length + 1}'});
-      }
-    }
-    return picked;
   }
-
-  Map<String,String>? _pickPreferredVoice(List<Map<String,String>> voices) {
-    if (voices.isEmpty) return null;
-    final sorted = [...voices]..sort((a,b) => _voiceScore(b).compareTo(_voiceScore(a)));
-    return sorted.first;
-  }
-
-  /// Best-effort gender inference from voice name. Returns 'male', 'female',
-  /// or null when unknown. Heuristics: literal "male"/"female" first, then
-  /// known Google TTS variant codes (Wavenet/Studio letters, Pixel `xxx`
-  /// codes like `tpf`/`iom`).
-  String? _voiceGender(String name) {
-    final n = name.toLowerCase();
-    if (n.contains('female')) return 'female';
-    if (RegExp(r'(^|[^fe])male').hasMatch(n)) return 'male';
-
-    // Google Wavenet/Studio/Neural/Journey: letter suffix encodes gender.
-    final m = RegExp(r'(?:wavenet|neural2|studio|journey|news|polyglot)-([a-z])',
-            caseSensitive: false)
-        .firstMatch(n);
-    if (m != null) {
-      const female = {'a', 'c', 'e', 'f', 'g', 'h', 'o'};
-      const male = {'b', 'd', 'i', 'j', 'n', 'q'};
-      final letter = m.group(1)!.toLowerCase();
-      if (female.contains(letter)) return 'female';
-      if (male.contains(letter)) return 'male';
-    }
-
-    // Pixel/Android offline voices: 3-letter code, e.g. en-us-x-tpf-local.
-    final p = RegExp(r'-x-([a-z]{3})-').firstMatch(n);
-    if (p != null) {
-      final code = p.group(1)!;
-      const femaleCodes = {'tpf', 'tpc', 'iog', 'sfg'};
-      const maleCodes = {'iol', 'iom', 'tpd', 'sfb'};
-      if (femaleCodes.contains(code)) return 'female';
-      if (maleCodes.contains(code)) return 'male';
-      // Fallback: last letter often differentiates within a family.
-      final last = code[2];
-      if ('cfgh'.contains(last)) return 'female';
-      if ('bdmn'.contains(last)) return 'male';
-    }
-    return null;
-  }
-
-  int _voiceScore(Map<String,String> v) {
-    final n = (v['name'] ?? '').toLowerCase();
-    var s = 0;
-    if (n.contains('wavenet') || n.contains('neural') || n.contains('studio')
-        || n.contains('premium') || n.contains('journey')) { s += 120; }
-    if (n.contains('seanet') || n.contains('tpf')) { s += 70; }
-    // Network voices on Android are the high-quality Google ones.
-    if ((v['network_required'] ?? '').toLowerCase() == 'true') s += 40;
-    final q = int.tryParse(v['quality'] ?? '');
-    if (q != null) s += q;
-    if (n.contains('default')) s -= 25;
-    // Penalise locally-embedded "compact" voices — those are the robotic ones.
-    if (n.contains('local') || n.contains('embedded') ||
-        n.contains('compact')) {
-      s -= 30;
-    }
-    return s;
-  }
-
-  String _voiceKey(Map<String,String> v) => '${v['name']}|${v['locale']}';
 
   Future<void> dispose() async {
+    await clearQueue();
+    await _positionSub?.cancel();
+    await _completeSub?.cancel();
+    await _player?.dispose();
+    _tts?.free();
+    _tts = null;
     await _statusCtl.close();
     await _progressCtl.close();
   }
@@ -341,7 +306,12 @@ class TtsService {
 enum TtsStatus { idle, speaking, failed }
 
 class TtsProgress {
-  const TtsProgress({required this.text, required this.wordStart, required this.wordEnd, required this.word});
+  const TtsProgress({
+    required this.text,
+    required this.wordStart,
+    required this.wordEnd,
+    required this.word,
+  });
   final String text;
   final int wordStart;
   final int wordEnd;

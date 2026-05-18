@@ -75,9 +75,10 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
     _controller.clear();
 
     try {
+      // Phase 1: echo path — no LLM/gateway. Same UX as real send.
       await ref
           .read(chatRepositoryProvider)
-          .send(sessionKey: key, text: text);
+          .sendEcho(sessionKey: key, text: text);
       if (isFirstMessage) {
         unawaited(_popSessionWhenAiResponds(
           sessionKey: key,
@@ -164,7 +165,16 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
                   fontSize: 15,
                   height: 1.45,
                 ),
-                decoration: const InputDecoration.collapsed(hintText: null),
+                decoration: const InputDecoration(
+                  isCollapsed: true,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
               // Custom display: typed text + thicker blinking caret.
               IgnorePointer(
@@ -186,28 +196,29 @@ class _Display extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (text.isNotEmpty)
-          Flexible(
-            child: Text(
-              text,
-              textAlign: TextAlign.center,
-              softWrap: true,
-              overflow: TextOverflow.visible,
-              style: TextStyle(
-                color: tokens.text,
-                fontSize: 15,
-                height: 1.45,
-                letterSpacing: -0.005 * 15,
-              ),
-            ),
+    // Inline the caret as a WidgetSpan inside the text run so it wraps with
+    // the last character instead of sitting in the right edge of the row
+    // when the text spills to a second line.
+    final style = TextStyle(
+      color: tokens.text,
+      fontSize: 15,
+      height: 1.45,
+      letterSpacing: -0.005 * 15,
+    );
+    return RichText(
+      textAlign: TextAlign.center,
+      softWrap: true,
+      overflow: TextOverflow.visible,
+      text: TextSpan(
+        style: style,
+        children: [
+          if (text.isNotEmpty) TextSpan(text: text),
+          WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: _Caret(color: tokens.text),
           ),
-        _Caret(color: tokens.text),
-      ],
+        ],
+      ),
     );
   }
 }

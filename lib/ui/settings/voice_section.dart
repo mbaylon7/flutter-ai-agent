@@ -30,13 +30,13 @@ class VoiceSection extends ConsumerWidget {
                 child: ListView(
                   shrinkWrap: true,
                   children: tts.voices.map((v) {
-                    final key = '${v['name']}|${v['locale']}';
-                    final label = v['label'] ?? v['name'] ?? '';
+                    final key = v['key'] ?? '${v['name']}|${v['locale']}';
+                    final label = v['name'] ?? '';
                     return ListTile(
                       title: Text(label,
                           style: TextStyle(color: tokens.text, fontSize: 13)),
                       subtitle: Text(
-                        '${v['name']} · ${v['locale']}',
+                        v['locale'] ?? '',
                         style: TextStyle(
                             color: tokens.textMuted, fontSize: 11.5),
                       ),

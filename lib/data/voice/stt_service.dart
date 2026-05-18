@@ -1,35 +1,38 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
-import 'package:vosk_flutter/vosk_flutter.dart';
+import 'package:record/record.dart';
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+import 'package:stt_tts/data/voice/sherpa_assets.dart';
 
-/// On-device streaming STT backed by Vosk (Kaldi). Replaces the Android
-/// RecognitionService path so there are no system start/stop beeps and the
-/// mic stays open continuously for live-conversation UX.
+/// On-device streaming speech-to-text backed by Sherpa-ONNX (zipformer
+/// transducer). Replaces the previous speech_to_text/Vosk implementations.
 ///
-/// Public surface mirrors the original speech_to_text-based service so the
-/// rest of the app doesn't need to change.
+/// Public surface is identical to the prior service so [VoiceSession] and
+/// other callers don't need to change:
+///   - [init], [isAvailable], [isListening]
+///   - [start] / [startContinuous] (alias) / [stop]
+///   - [status], [transcript], [normalizedLevel] streams
+///
+/// Why Sherpa? It runs entirely in-process — no Android RecognitionService,
+/// no system start/stop beeps. The model lives in `assets/models/` and is
+/// copied to the app support directory on first launch.
 class SttService {
-  static const _modelAsset = 'assets/models/vosk-model-en-us-0.22-lgraph.zip';
+  static const _modelDir = 'assets/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06';
   static const _sampleRate = 16000;
+  static const _encoderFile = 'encoder.onnx';
+  static const _decoderFile = 'decoder.onnx';
+  static const _joinerFile = 'joiner.onnx';
 
-  VoskFlutterPlugin? _vosk;
-  Model? _model;
-  Recognizer? _recognizer;
-  SpeechService? _speechService;
+  sherpa.OnlineRecognizer? _recognizer;
+  sherpa.OnlineStream? _stream;
+  final AudioRecorder _recorder = AudioRecorder();
+  StreamSubscription<Uint8List>? _audioSub;
 
   bool _enabled = false;
   bool _listening = false;
-
-  StreamSubscription<String>? _partialSub;
-  StreamSubscription<String>? _resultSub;
-
-  // Vosk's SpeechService owns the mic and doesn't expose buffer-level
-  // metrics, so the wave-bar visualiser is fed a synthesised pulse instead.
-  Timer? _levelPulseTimer;
-  final _rng = Random();
+  String _lastEmittedText = '';
 
   final _statusCtl = StreamController<SttStatus>.broadcast();
   final _transcriptCtl = StreamController<SttTranscript>.broadcast();
@@ -39,113 +42,174 @@ class SttService {
   Stream<SttTranscript> get transcript => _transcriptCtl.stream;
   Stream<double> get normalizedLevel => _levelCtl.stream;
 
+  bool get isAvailable => _enabled;
+  bool get isListening => _listening;
+
   Future<void> init() async {
     try {
-      _vosk = VoskFlutterPlugin.instance();
-      final modelPath = await ModelLoader().loadFromAssets(_modelAsset);
-      _model = await _vosk!.createModel(modelPath);
-      _recognizer = await _vosk!.createRecognizer(
-        model: _model!,
-        sampleRate: _sampleRate,
+      sherpa.initBindings();
+      final encoder = await copyAssetFile('$_modelDir/$_encoderFile');
+      final decoder = await copyAssetFile('$_modelDir/$_decoderFile');
+      final joiner = await copyAssetFile('$_modelDir/$_joinerFile');
+      final tokens = await copyAssetFile('$_modelDir/tokens.txt');
+
+      final transducer = sherpa.OnlineTransducerModelConfig(
+        encoder: encoder,
+        decoder: decoder,
+        joiner: joiner,
       );
-      _speechService = await _vosk!.initSpeechService(_recognizer!);
+      final model = sherpa.OnlineModelConfig(
+        transducer: transducer,
+        tokens: tokens,
+        modelType: 'zipformer2',
+        numThreads: 4,
+        debug: false,
+      );
+      final config = sherpa.OnlineRecognizerConfig(
+        model: model,
+        ruleFsts: '',
+        enableEndpoint: true,
+        rule1MinTrailingSilence: 1.5,
+        rule2MinTrailingSilence: 0.8,
+        rule3MinUtteranceLength: 20,
+        decodingMethod: 'modified_beam_search',
+      );
+      _recognizer = sherpa.OnlineRecognizer(config);
       _enabled = true;
-    } on PlatformException {
+    } on PlatformException catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.init] PlatformException: $e\n$st');
       _enabled = false;
-    } on MissingPluginException {
+    } on MissingPluginException catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.init] MissingPluginException: $e\n$st');
       _enabled = false;
-    } catch (_) {
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.init] FAILED: $e\n$st');
       _enabled = false;
     }
   }
 
-  bool get isAvailable => _enabled;
-  bool get isListening => _listening;
-
-  /// One-shot listen kept for API parity. Vosk treats every utterance as a
-  /// final result already, so this is just an alias for [startContinuous].
+  /// One-shot listen — kept as an alias of [startContinuous] for API parity
+  /// with the previous speech_to_text-based service.
   Future<void> start({Duration? pauseFor}) => startContinuous(pauseFor: pauseFor);
 
   Future<void> startContinuous({Duration? pauseFor}) async {
-    if (!_enabled || _speechService == null) return;
+    if (!_enabled || _recognizer == null) return;
     if (_listening) return;
-    await _bindStreams();
+
+    if (!await _recorder.hasPermission()) {
+      _statusCtl.add(SttStatus.failed);
+      return;
+    }
+
+    _stream = _recognizer!.createStream();
+    _lastEmittedText = '';
+
     try {
-      await _speechService!.start();
+      final pcm = await _recorder.startStream(const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: _sampleRate,
+        numChannels: 1,
+        // VOICE_COMMUNICATION engages Android's built-in acoustic echo
+        // cancellation — needed for Phase 3 barge-in, harmless in Phase 1.
+        androidConfig: AndroidRecordConfig(
+          audioSource: AndroidAudioSource.voiceCommunication,
+        ),
+      ));
+      _audioSub = pcm.listen(_onPcm, onError: (_) {
+        _statusCtl.add(SttStatus.failed);
+      });
       _listening = true;
       _statusCtl.add(SttStatus.listening);
-      _startLevelPulse();
-    } on PlatformException {
+    } on PlatformException catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.startContinuous] PlatformException: $e\n$st');
       _statusCtl.add(SttStatus.failed);
+      await _teardown();
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.startContinuous] FAILED: $e\n$st');
+      _statusCtl.add(SttStatus.failed);
+      await _teardown();
     }
   }
 
   Future<void> stop() async {
-    _stopLevelPulse();
-    if (_speechService != null) {
-      try {
-        await _speechService!.stop();
-      } catch (_) {/* best-effort */}
-    }
-    await _partialSub?.cancel();
-    await _resultSub?.cancel();
-    _partialSub = null;
-    _resultSub = null;
-    _listening = false;
+    if (!_listening) return;
+    await _teardown();
     _statusCtl.add(SttStatus.idle);
   }
 
-  Future<void> _bindStreams() async {
-    await _partialSub?.cancel();
-    await _resultSub?.cancel();
-    _partialSub = _speechService!.onPartial().listen(_onPartial);
-    _resultSub = _speechService!.onResult().listen(_onResult);
-  }
-
-  void _onPartial(String json) {
-    final text = _extract(json, 'partial');
-    if (text.isEmpty) return;
-    _transcriptCtl.add(SttTranscript(
-      text: _smartFormat(text),
-      isFinal: false,
-    ));
-  }
-
-  void _onResult(String json) {
-    final text = _extract(json, 'text');
-    if (text.isEmpty) return;
-    _transcriptCtl.add(SttTranscript(
-      text: _smartFormat(text),
-      isFinal: true,
-    ));
-  }
-
-  String _extract(String json, String key) {
+  Future<void> _teardown() async {
+    _listening = false;
+    await _audioSub?.cancel();
+    _audioSub = null;
     try {
-      final m = jsonDecode(json) as Map<String, dynamic>;
-      return (m[key] as String? ?? '').trim();
-    } catch (_) {
-      return '';
+      if (await _recorder.isRecording()) {
+        await _recorder.stop();
+      }
+    } catch (_) {/* best-effort */}
+    _stream?.free();
+    _stream = null;
+  }
+
+  void _onPcm(Uint8List bytes) {
+    final stream = _stream;
+    final rec = _recognizer;
+    if (stream == null || rec == null) return;
+
+    final samples = convertBytesToFloat32(bytes);
+    _emitLevel(samples);
+
+    stream.acceptWaveform(samples: samples, sampleRate: _sampleRate);
+    while (rec.isReady(stream)) {
+      rec.decode(stream);
+    }
+
+    final text = rec.getResult(stream).text.trim();
+    final endpoint = rec.isEndpoint(stream);
+
+    if (text.isNotEmpty && text != _lastEmittedText) {
+      _lastEmittedText = text;
+      _transcriptCtl.add(SttTranscript(
+        text: _smartFormat(text),
+        isFinal: false,
+      ));
+    }
+
+    if (endpoint) {
+      if (text.isNotEmpty) {
+        // Zipformer never emits punctuation; append a period so each
+        // utterance reads as a sentence and the AI subtitle/echo doesn't
+        // run multiple sentences together.
+        final withPeriod = text.endsWith('.') || text.endsWith('?') || text.endsWith('!')
+            ? text
+            : '$text.';
+        _transcriptCtl.add(SttTranscript(
+          text: _smartFormat(withPeriod),
+          isFinal: true,
+        ));
+      }
+      rec.reset(stream);
+      _lastEmittedText = '';
     }
   }
 
-  // ── Synthetic sound-level pulse ──────────────────────────────────────
-  // Vosk's SpeechService owns the mic and doesn't expose buffer-level
-  // metrics. We emit a gently varying pulse so the wave-bar visualiser
-  // doesn't sit flat while the user is talking.
-  void _startLevelPulse() {
-    _stopLevelPulse();
-    _levelPulseTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
-      if (!_listening) return;
-      final base = 0.25 + _rng.nextDouble() * 0.5;
-      _levelCtl.add(base);
-    });
-  }
-
-  void _stopLevelPulse() {
-    _levelPulseTimer?.cancel();
-    _levelPulseTimer = null;
-    _levelCtl.add(0);
+  // Simple peak-amplitude → 0..1 envelope so the wave-bar visualiser has
+  // something to react to. Avoids the noisy seeded-range approach by just
+  // taking the max absolute sample in the chunk.
+  void _emitLevel(Float32List samples) {
+    if (samples.isEmpty) return;
+    var peak = 0.0;
+    for (var i = 0; i < samples.length; i++) {
+      final v = samples[i].abs();
+      if (v > peak) peak = v;
+    }
+    // Compress so quiet speech still reads as motion in the UI.
+    final norm = (peak * 3.0).clamp(0.0, 1.0);
+    _levelCtl.add(norm);
   }
 
   String _smartFormat(String text) {
@@ -162,12 +226,11 @@ class SttService {
 
   Future<void> dispose() async {
     await stop();
+    _recognizer?.free();
+    _recognizer = null;
     await _statusCtl.close();
     await _transcriptCtl.close();
     await _levelCtl.close();
-    _speechService?.dispose();
-    _recognizer?.dispose();
-    _model?.dispose();
   }
 }
 

@@ -160,6 +160,34 @@ class ChatRepository {
     }
   }
 
+  /// Phase 1 / sandbox echo path. Inserts a user message and a finalized
+  /// assistant message with the same text — no gateway call, no LLM. Used
+  /// while we validate the on-device STT/TTS pipeline before wiring the
+  /// real AI flow back in.
+  Future<void> sendEcho({
+    required String sessionKey,
+    required String text,
+  }) async {
+    final now = DateTime.now();
+    final userMsg = Message(
+      role: Role.user,
+      parts: [TextPart(text)],
+      createdAt: now,
+      streaming: StreamingState.finalized,
+    );
+    final assistantMsg = Message(
+      role: Role.assistant,
+      parts: [TextPart(text)],
+      createdAt: now.add(const Duration(milliseconds: 1)),
+      runId: newRequestId(),
+      streaming: StreamingState.finalized,
+    );
+    final current = List<Message>.of(_listFor(sessionKey))
+      ..add(userMsg)
+      ..add(assistantMsg);
+    _setList(sessionKey, current);
+  }
+
   /// Abort an in-flight run.
   Future<void> abort(String runId) => _gw.abort(runId);
 

@@ -55,7 +55,7 @@ class VoiceSession {
   // too aggressive for natural speech ("hello… what's the weather today"
   // would otherwise commit as two separate messages). We ignore Vosk's
   // "final" flag for end-of-turn detection and rely on this timer instead.
-  static const _silenceTimeout = Duration(milliseconds: 2500);
+  static const _silenceTimeout = Duration(milliseconds: 1500);
 
   // Accumulated text for the current user turn. Vosk fires `isFinal: true`
   // after every short pause, so we concatenate those finals locally and
@@ -148,8 +148,11 @@ class VoiceSession {
     final stt = _ref.read(sttServiceProvider);
     await stt.stop();
     final current = _ref.read(voiceStateProvider);
-    if (current == VoiceState.listening ||
-        current == VoiceState.userSpeaking) {
+    // Always demote to `paused` when the shell tells us to stop listening,
+    // including mid-`aiSpeaking`. Otherwise a chat-mode flip during TTS
+    // leaves the state at aiSpeaking, and the next startListening() bails
+    // because its no-op guard sees aiSpeaking and assumes the mic is hot.
+    if (current != VoiceState.idle && current != VoiceState.paused) {
       _ref.read(voiceStateProvider.notifier).set(VoiceState.paused);
       _ref.read(liveUserTranscriptProvider.notifier).state = '';
     }
@@ -263,10 +266,13 @@ class VoiceSession {
     _ref.read(liveUserTranscriptProvider.notifier).state = '';
     _ref.read(liveAiTranscriptProvider.notifier).state = '';
 
-    // Mic stays open through processing + AI playback (barge-in mode).
-
+    // Phase 1: bypass the LLM/gateway entirely. Echo the user transcript
+    // straight back via the chat repository, which inserts both the user
+    // and a finalized assistant message — the existing message stream
+    // pipeline then routes the echo through the TTS chunker just like a
+    // real AI reply would.
     try {
-      await _ref.read(chatRepositoryProvider).send(
+      await _ref.read(chatRepositoryProvider).sendEcho(
             sessionKey: sessionKey,
             text: text,
           );
@@ -373,7 +379,15 @@ class VoiceSession {
     _chunkCursor = 0;
 
     // Resume the mic now that the speaker is quiet.
-    if (_ref.read(uiModeProvider) != UiMode.voice) return;
+    if (_ref.read(uiModeProvider) != UiMode.voice) {
+      // Reset state so a later voice-mode re-entry can restart the mic.
+      // Without this, state stays at aiSpeaking and startListening() no-ops.
+      final s = _ref.read(voiceStateProvider);
+      if (s != VoiceState.idle && s != VoiceState.paused) {
+        _ref.read(voiceStateProvider.notifier).set(VoiceState.paused);
+      }
+      return;
+    }
     final state = _ref.read(voiceStateProvider);
     if (state == VoiceState.idle || state == VoiceState.paused) return;
 
@@ -395,16 +409,18 @@ class VoiceSession {
 
   void _handleTtsProgress(TtsProgress p) {
     if (_disposed) return;
-    // A change in `p.text` means a new chunk started — the previous chunk
-    // is now fully spoken, so commit it to the "already spoken" buffer.
+    // Show the entire chunk text up front so the subtitle never freezes
+    // mid-message between TTS chunks (the previous reveal-as-spoken approach
+    // looked like "AI is done" during the pause between sentences). The
+    // current word position is still emitted in TtsProgress for a future
+    // highlight cursor — for Phase 1 we just render the full text.
     if (p.text != _currentChunkText) {
       if (_currentChunkText.isNotEmpty) {
         _spokenChunks.add(_currentChunkText);
       }
       _currentChunkText = p.text;
     }
-    final spokenSoFar = p.text.substring(0, p.wordEnd.clamp(0, p.text.length));
-    final subtitle = [..._spokenChunks, spokenSoFar].join(' ').trim();
+    final subtitle = [..._spokenChunks, p.text].join(' ').trim();
     _ref.read(liveAiTranscriptProvider.notifier).state = subtitle;
   }
 

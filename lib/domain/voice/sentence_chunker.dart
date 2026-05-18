@@ -14,7 +14,7 @@
 /// past the cursor is emitted as one chunk even if it has no terminator.
 class SentenceChunker {
   const SentenceChunker({
-    this.minChunkChars = 12,
+    this.minChunkChars = 5,
     this.maxChunkChars = 220,
   });
 
@@ -39,7 +39,11 @@ class SentenceChunker {
 
     while (i < accumulated.length) {
       final ch = accumulated[i];
-      final isTerminator = ch == '.' || ch == '!' || ch == '?';
+      // Commas count as a split point so the TTS drain can insert a short
+      // breath pause between clauses. Trailing punctuation is preserved on
+      // each chunk so TTS can pick the pause length per chunk.
+      final isTerminator =
+          ch == '.' || ch == '!' || ch == '?' || ch == ',';
       final isParaBreak = ch == '\n' &&
           i + 1 < accumulated.length &&
           accumulated[i + 1] == '\n';

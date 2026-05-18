@@ -1,22 +1,11 @@
-import 'package:speech_to_text/speech_to_text.dart';
-
+/// Voice pipeline tuning constants for the Sherpa-ONNX backend.
 class VoiceConstants {
-  // Natural-cadence values. Android's flutter_tts treats ~0.5 as a real-time
-  // speaking pace, and pitch 1.0 avoids the chipmunk lift that made earlier
-  // voices feel robotic.
-  static const double speechRate = 0.50;
-  static const double pitch = 1.0;
-  // Long pauseFor minimises how often the Android RecognitionService
-  // start/stop beep fires during continuous listening. Each session ends
-  // when this elapses with no speech, then auto-restarts.
-  static const Duration pauseFor = Duration(seconds: 30);
-  static const Duration listenFor = Duration(minutes: 5);
-  static const ListenMode listenMode = ListenMode.dictation;
-  static const bool autoPunctuation = true;
+  // TTS speed and pitch are baked into the Piper model; we don't expose
+  // them as runtime constants. Speed can be adjusted via
+  // OfflineTtsGenerationConfig if needed.
+
+  // Sherpa-ONNX endpoint detection is configured in [SttService] directly,
+  // so the old pauseFor / listenFor / ListenMode constants are gone.
 
   static const int maxVoices = 10;
-
-  // Sentinel sound-level seeds that are inverted intentionally — see CLAUDE.md.
-  static const double soundLevelSeedMin = 50000;
-  static const double soundLevelSeedMax = -50000;
 }
