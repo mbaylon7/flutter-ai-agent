@@ -1,0 +1,556 @@
+<!doctype html>
+<html lang="en">
+<head><script data-od-sandbox-shim>(function(){
+  function makeStore(){
+    var data = {};
+    var api = {
+      getItem: function(k){ return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function(k, v){ data[k] = String(v); },
+      removeItem: function(k){ delete data[k]; },
+      clear: function(){ data = {}; },
+      key: function(i){ return Object.keys(data)[i] || null; }
+    };
+    Object.defineProperty(api, 'length', { get: function(){ return Object.keys(data).length; } });
+    return api;
+  }
+  function tryShim(name){
+    var works = false;
+    try { works = !!window[name] && typeof window[name].getItem === 'function'; void window[name].length; }
+    catch (_) { works = false; }
+    if (works) return;
+    try { Object.defineProperty(window, name, { configurable: true, value: makeStore() }); }
+    catch (_) { try { window[name] = makeStore(); } catch (__) {} }
+  }
+  tryShim('localStorage');
+  tryShim('sessionStorage');
+})();</script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>AI Voice Agent</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: oklch(99% 0.002 240);
+      --surface: oklch(100% 0 0);
+      --fg: oklch(18% 0.012 250);
+      --muted: oklch(54% 0.012 250);
+      --border: oklch(92% 0.005 250);
+      --accent: oklch(58% 0.18 255);
+      --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+      --font-body: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--fg);
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* iPhone 15 Pro frame */
+    .device-frame {
+      width: 393px;
+      height: 852px;
+      margin: 20px auto;
+      background: #000;
+      border-radius: 55px;
+      padding: 12px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      position: relative;
+    }
+
+    .screen {
+      width: 100%;
+      height: 100%;
+      background: #FAFAFA;
+      border-radius: 47px;
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Status bar */
+    .status-bar {
+      height: 54px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 0 24px 8px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--fg);
+      position: relative;
+      z-index: 100;
+    }
+
+    .time {
+      letter-spacing: -0.01em;
+    }
+
+    .status-icons {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    /* Dynamic Island */
+    .dynamic-island {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 126px;
+      height: 37px;
+      background: #000;
+      border-radius: 19px;
+      z-index: 101;
+    }
+
+    /* AI Visualization Area */
+    .visualization-container {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      background: #FAFAFA;
+    }
+
+    .aurora-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Conversation Area */
+    .conversation-container {
+      height: 50%;
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      background: #FAFAFA;
+      overflow: hidden;
+    }
+
+    .conversation-scroll {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 0 20px 20px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      position: relative;
+    }
+
+    .conversation-scroll::-webkit-scrollbar {
+      display: none;
+    }
+
+    .message {
+      margin-bottom: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .message-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    .message-content {
+      font-size: 16px;
+      line-height: 1.5;
+      color: var(--fg);
+    }
+
+    .message.user .message-label {
+      color: var(--accent);
+    }
+
+    .message.ai .message-content {
+      color: var(--fg);
+    }
+
+    .message.user .message-content {
+      color: var(--fg);
+    }
+
+    /* Fade overlay at top */
+    .conversation-fade {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 120px;
+      background: linear-gradient(to bottom, #FAFAFA, transparent);
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    /* Bottom Navigation */
+    .bottom-nav {
+      height: 88px;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      padding: 0 40px 8px;
+      position: relative;
+      z-index: 10;
+      background: #FAFAFA;
+    }
+
+    .nav-button {
+      width: 44px;
+      height: 44px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--fg);
+      transition: opacity 0.2s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .nav-button:active {
+      opacity: 0.5;
+    }
+
+    .nav-button svg {
+      width: 28px;
+      height: 28px;
+    }
+
+    .toggle-button {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      transition: transform 0.2s, box-shadow 0.2s, background 0.3s;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .toggle-button:active {
+      transform: scale(0.95);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .toggle-button svg {
+      width: 32px;
+      height: 32px;
+    }
+
+    /* Home indicator */
+    .home-indicator {
+      width: 140px;
+      height: 5px;
+      background: var(--fg);
+      opacity: 0.3;
+      border-radius: 3px;
+      margin: 8px auto 12px;
+    }
+
+    /* Listening state */
+    .listening .toggle-button {
+      background: var(--fg);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+      50% { box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+    }
+  </style>
+</head>
+<body>
+  <div class="device-frame">
+    <div class="screen" id="screen">
+      <div class="dynamic-island"></div>
+      
+      <div class="status-bar">
+        <div class="time">9:41</div>
+        <div class="status-icons">
+          <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor">
+            <path d="M16.5 1.5C16.5 0.671573 15.8284 0 15 0H3C2.17157 0 1.5 0.671573 1.5 1.5V10.5C1.5 11.3284 2.17157 12 3 12H15C15.8284 12 16.5 11.3284 16.5 10.5V1.5Z"/>
+            <path d="M17.25 3.75L18 4.5V7.5L17.25 8.25V3.75Z" fill="currentColor" fill-opacity="0.3"/>
+          </svg>
+          <svg width="25" height="12" viewBox="0 0 25 12" fill="currentColor">
+            <rect opacity="0.35" x="0.5" y="0.5" width="21" height="11" rx="2.5" stroke="currentColor"/>
+            <rect opacity="0.4" x="2" y="2" width="4" height="8" rx="1"/>
+            <rect x="7" y="2" width="4" height="8" rx="1"/>
+            <rect x="12" y="2" width="4" height="8" rx="1"/>
+            <rect x="17" y="2" width="4" height="8" rx="1"/>
+            <rect x="23" y="4" width="1.5" height="4" rx="0.75" fill="currentColor" fill-opacity="0.4"/>
+          </svg>
+        </div>
+      </div>
+
+      <div class="visualization-container">
+        <canvas class="aurora-canvas" id="auroraCanvas"></canvas>
+      </div>
+
+      <div class="conversation-container">
+        <div class="conversation-fade"></div>
+        <div class="conversation-scroll" id="conversationScroll">
+          <div class="message user">
+            <div class="message-label">YOU</div>
+            <div class="message-content">What's the weather like today?</div>
+          </div>
+          
+          <div class="message ai">
+            <div class="message-label">AI</div>
+            <div class="message-content">It's currently 72°F and sunny in your area. Perfect day for a walk! Would you like me to check the forecast for later today?</div>
+          </div>
+          
+          <div class="message user">
+            <div class="message-label">YOU</div>
+            <div class="message-content">Yes please, especially for this evening.</div>
+          </div>
+          
+          <div class="message ai">
+            <div class="message-label">AI</div>
+            <div class="message-content">This evening will stay clear with temperatures dropping to around 65°F by 8 PM. It's a great evening for outdoor activities.</div>
+          </div>
+          
+          <div class="message user">
+            <div class="message-label">YOU</div>
+            <div class="message-content">Can you help me plan a dinner menu for tonight?</div>
+          </div>
+          
+          <div class="message ai">
+            <div class="message-label">AI</div>
+            <div class="message-content">I'd love to help! Are you cooking for yourself or do you have guests? Any dietary preferences or ingredients you'd like to use?</div>
+          </div>
+          
+          <div class="message user">
+            <div class="message-label">YOU</div>
+            <div class="message-content">Just for two people, and we're trying to eat more vegetables.</div>
+          </div>
+          
+          <div class="message ai">
+            <div class="message-label">AI</div>
+            <div class="message-content">Perfect! How about a roasted vegetable grain bowl with tahini dressing? It's colorful, healthy, and takes about 30 minutes. I can walk you through the recipe step by step.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom-nav">
+        <button class="nav-button" aria-label="Menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="1" fill="currentColor"/>
+            <circle cx="12" cy="6" r="1" fill="currentColor"/>
+            <circle cx="12" cy="18" r="1" fill="currentColor"/>
+          </svg>
+        </button>
+
+        <button class="toggle-button" id="toggleBtn" aria-label="Toggle listening">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+            <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+          </svg>
+        </button>
+
+        <button class="nav-button" aria-label="Settings">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94L14.4 2.81c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="home-indicator"></div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('auroraCanvas');
+    const ctx = canvas.getContext('2d');
+    const screen = document.getElementById('screen');
+    const toggleBtn = document.getElementById('toggleBtn');
+    const conversationScroll = document.getElementById('conversationScroll');
+    
+    let isListening = false;
+    let waves = [];
+    let time = 0;
+    let audioSpikes = [];
+    
+    // Scroll to bottom on load
+    conversationScroll.scrollTop = conversationScroll.scrollHeight;
+    
+    // Set canvas size
+    function resizeCanvas() {
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    // Smooth flowing wave inspired by the reference image
+    class SmoothWave {
+      constructor(index, total) {
+        this.index = index;
+        this.offset = (index / total) * Math.PI * 2;
+        this.baseY = canvas.height * (0.3 + (index / total) * 0.4);
+        this.amplitude = 30 + index * 8;
+        this.frequency = 0.006 + index * 0.001;
+        this.speed = 0.002 + index * 0.0008;
+        
+        // Colors from the reference - soft purples, blues, pinks
+        const colors = [
+          { h: 260, s: 60, l: 75 },  // Soft purple
+          { h: 280, s: 55, l: 70 },  // Purple-pink
+          { h: 220, s: 50, l: 78 },  // Light blue
+          { h: 240, s: 45, l: 72 },  // Blue-purple
+          { h: 300, s: 50, l: 68 }   // Pink-purple
+        ];
+        this.color = colors[index % colors.length];
+      }
+
+      draw(time, intensity, spikeIntensity) {
+        ctx.save();
+        
+        // Create smooth wave path
+        ctx.beginPath();
+        
+        for (let x = 0; x <= canvas.width; x += 3) {
+          const angle1 = x * this.frequency + time * this.speed + this.offset;
+          const angle2 = x * this.frequency * 1.7 + time * this.speed * 0.7 + this.offset;
+          const angle3 = x * this.frequency * 2.3 + time * this.speed * 0.5 - this.offset;
+          
+          // Add spike variation across the wave
+          const spikeVariation = Math.sin(x * 0.01 + time * 0.05) * spikeIntensity;
+          
+          const wave = Math.sin(angle1) * this.amplitude +
+                      Math.sin(angle2) * (this.amplitude * 0.4) +
+                      Math.sin(angle3) * (this.amplitude * 0.25);
+          
+          const totalAmplitude = (1 + intensity * 0.3 + spikeVariation * 1.2);
+          const y = this.baseY + wave * totalAmplitude;
+          
+          if (x === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        
+        // Complete the shape
+        ctx.lineTo(canvas.width, canvas.height);
+        ctx.lineTo(0, canvas.height);
+        ctx.closePath();
+        
+        // Create gradient fill - brighter when spiking
+        const gradient = ctx.createLinearGradient(0, this.baseY - this.amplitude * 2, 0, canvas.height);
+        const alpha = 0.25 + intensity * 0.2 + spikeIntensity * 0.3;
+        gradient.addColorStop(0, `hsla(${this.color.h}, ${this.color.s}%, ${this.color.l}%, ${alpha})`);
+        gradient.addColorStop(0.6, `hsla(${this.color.h}, ${this.color.s}%, ${this.color.l}%, ${alpha * 0.5})`);
+        gradient.addColorStop(1, `hsla(${this.color.h}, ${this.color.s}%, ${this.color.l}%, 0)`);
+        
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+        ctx.restore();
+      }
+    }
+
+    // Initialize waves
+    const waveCount = 5;
+    for (let i = 0; i < waveCount; i++) {
+      waves.push(new SmoothWave(i, waveCount));
+    }
+
+    // Generate random audio spikes when listening
+    function generateAudioSpikes() {
+      if (isListening && Math.random() < 0.15) {
+        audioSpikes.push({
+          intensity: 0.3 + Math.random() * 0.7,
+          decay: 0.92 + Math.random() * 0.05
+        });
+      }
+      
+      // Decay existing spikes
+      audioSpikes = audioSpikes
+        .map(spike => ({
+          intensity: spike.intensity * spike.decay,
+          decay: spike.decay
+        }))
+        .filter(spike => spike.intensity > 0.01);
+    }
+
+    // Calculate total spike intensity
+    function getTotalSpikeIntensity() {
+      return audioSpikes.reduce((sum, spike) => sum + spike.intensity, 0);
+    }
+
+    // Animation loop
+    let intensity = 0.2;
+    let targetIntensity = 0.2;
+    
+    function animate() {
+      time += 1;
+      
+      // Clear canvas
+      ctx.fillStyle = '#FAFAFA';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Generate and manage audio spikes
+      generateAudioSpikes();
+      const spikeIntensity = getTotalSpikeIntensity();
+      
+      // Very smooth intensity transition
+      intensity += (targetIntensity - intensity) * 0.02;
+      
+      // Base animation when listening
+      if (isListening) {
+        const base = 0.4;
+        const wave1 = Math.sin(time * 0.008) * 0.15;
+        const wave2 = Math.sin(time * 0.005) * 0.1;
+        targetIntensity = base + wave1 + wave2;
+      } else {
+        targetIntensity = 0.2;
+      }
+      
+      // Draw all waves from back to front
+      waves.forEach(wave => {
+        wave.draw(time, intensity, spikeIntensity);
+      });
+      
+      requestAnimationFrame(animate);
+    }
+    
+    animate();
+
+    // Toggle listening state
+    toggleBtn.addEventListener('click', () => {
+      isListening = !isListening;
+      screen.classList.toggle('listening', isListening);
+      
+      if (!isListening) {
+        audioSpikes = [];
+      }
+    });
+  </script>
+</body>
+</html>

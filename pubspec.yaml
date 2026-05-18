@@ -58,6 +58,13 @@ dependencies:
   # Slice 1D
   permission_handler: ^11.3.1
   porcupine_flutter: ^3.0.4
+  vosk_flutter: ^0.3.48
+
+# vosk_flutter is unmaintained (last release 2022) and pins
+# permission_handler ^10.x. Force it to use our modern version — the actual
+# permission API surface it uses is unchanged.
+dependency_overrides:
+  permission_handler: ^11.3.1
 
 dev_dependencies:
   flutter_test:
@@ -85,6 +92,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/wake-words/
+    - assets/models/vosk-model-en-us-0.22-lgraph.zip
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

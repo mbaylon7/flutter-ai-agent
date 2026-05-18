@@ -46,3 +46,12 @@ app.*.map.json
 
 # Brainstorm runtime state (mockups under content/ are kept)
 .superpowers/brainstorm/*/state/
+
+# Binary speech models — too large for git history; download / bundle separately
+assets/models/
+
+# Built APKs at repo root
+/*.apk
+
+# Android build artefacts that escape /build/
+/android/build/

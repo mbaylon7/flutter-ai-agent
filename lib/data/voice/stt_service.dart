@@ -1,31 +1,35 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/services.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart';
-import 'package:stt_tts/data/voice/voice_constants.dart';
+import 'package:vosk_flutter/vosk_flutter.dart';
 
+/// On-device streaming STT backed by Vosk (Kaldi). Replaces the Android
+/// RecognitionService path so there are no system start/stop beeps and the
+/// mic stays open continuously for live-conversation UX.
+///
+/// Public surface mirrors the original speech_to_text-based service so the
+/// rest of the app doesn't need to change.
 class SttService {
-  final SpeechToText _stt = SpeechToText();
+  static const _modelAsset = 'assets/models/vosk-model-en-us-0.22-lgraph.zip';
+  static const _sampleRate = 16000;
+
+  VoskFlutterPlugin? _vosk;
+  Model? _model;
+  Recognizer? _recognizer;
+  SpeechService? _speechService;
+
   bool _enabled = false;
   bool _listening = false;
-  bool _userWantsToListen = false;
-  bool _hasReceivedFinalResult = false;
 
-  /// When true, the engine restarts after every final result as well as
-  /// after silence-driven `done` events, until [stop] is called. Used by
-  /// voice mode for continuous-conversation listening.
-  bool _continuous = false;
-  Duration _pauseFor = VoiceConstants.pauseFor;
-  String? _localeId;
+  StreamSubscription<String>? _partialSub;
+  StreamSubscription<String>? _resultSub;
 
-  // Sound-level normalization (sentinel-seeded; see CLAUDE.md)
-  double _minSoundLevel = VoiceConstants.soundLevelSeedMin;
-  double _maxSoundLevel = VoiceConstants.soundLevelSeedMax;
-  double _currentSoundLevel = 0;
-  DateTime _lastLevelTick = DateTime.now();
+  // Vosk's SpeechService owns the mic and doesn't expose buffer-level
+  // metrics, so the wave-bar visualiser is fed a synthesised pulse instead.
+  Timer? _levelPulseTimer;
+  final _rng = Random();
 
   final _statusCtl = StreamController<SttStatus>.broadcast();
   final _transcriptCtl = StreamController<SttTranscript>.broadcast();
@@ -37,22 +41,20 @@ class SttService {
 
   Future<void> init() async {
     try {
-      _enabled = await _stt.initialize(
-        onStatus: _onStatus, onError: _onError, debugLogging: false,
+      _vosk = VoskFlutterPlugin.instance();
+      final modelPath = await ModelLoader().loadFromAssets(_modelAsset);
+      _model = await _vosk!.createModel(modelPath);
+      _recognizer = await _vosk!.createRecognizer(
+        model: _model!,
+        sampleRate: _sampleRate,
       );
-      if (_enabled) {
-        final locales = await _stt.locales();
-        final sys = await _stt.systemLocale();
-        _localeId = sys?.localeId;
-        if (_localeId == null || !locales.any((l) => l.localeId == _localeId)) {
-          final en = locales.where((e) => e.localeId.startsWith('en')).toList();
-          _localeId = en.isNotEmpty ? en.first.localeId
-              : (locales.isNotEmpty ? locales.first.localeId : null);
-        }
-      }
+      _speechService = await _vosk!.initSpeechService(_recognizer!);
+      _enabled = true;
     } on PlatformException {
       _enabled = false;
     } on MissingPluginException {
+      _enabled = false;
+    } catch (_) {
       _enabled = false;
     }
   }
@@ -60,114 +62,92 @@ class SttService {
   bool get isAvailable => _enabled;
   bool get isListening => _listening;
 
-  /// One-shot listen. Restarts on silence-only `done` events until a final
-  /// result arrives or [stop] is called.
-  Future<void> start({Duration? pauseFor}) async {
-    if (!_enabled) return;
-    _continuous = false;
-    _pauseFor = pauseFor ?? VoiceConstants.pauseFor;
-    _userWantsToListen = true;
-    _hasReceivedFinalResult = false;
-    _resetLevels();
-    await _begin();
-  }
+  /// One-shot listen kept for API parity. Vosk treats every utterance as a
+  /// final result already, so this is just an alias for [startContinuous].
+  Future<void> start({Duration? pauseFor}) => startContinuous(pauseFor: pauseFor);
 
-  /// Continuous listen for voice-mode conversations. The engine restarts
-  /// automatically after each final result, so partials and finals keep
-  /// flowing until [stop] is called.
   Future<void> startContinuous({Duration? pauseFor}) async {
-    if (!_enabled) return;
-    _continuous = true;
-    _pauseFor = pauseFor ?? VoiceConstants.pauseFor;
-    _userWantsToListen = true;
-    _hasReceivedFinalResult = false;
-    _resetLevels();
-    await _begin();
-  }
-
-  Future<void> stop() async {
-    _userWantsToListen = false;
-    _continuous = false;
-    await _stt.stop();
-    _listening = false;
-    _statusCtl.add(SttStatus.idle);
-  }
-
-  Future<void> _begin() async {
+    if (!_enabled || _speechService == null) return;
+    if (_listening) return;
+    await _bindStreams();
     try {
-      await _stt.listen(
-        onResult: _onResult,
-        onSoundLevelChange: _onLevel,
-        localeId: _localeId,
-        listenFor: VoiceConstants.listenFor,
-        pauseFor: _pauseFor,
-        listenOptions: SpeechListenOptions(
-          partialResults: true,
-          listenMode: VoiceConstants.listenMode,
-          cancelOnError: false,
-          autoPunctuation: VoiceConstants.autoPunctuation,
-        ),
-      );
+      await _speechService!.start();
+      _listening = true;
+      _statusCtl.add(SttStatus.listening);
+      _startLevelPulse();
     } on PlatformException {
-      _userWantsToListen = false;
       _statusCtl.add(SttStatus.failed);
     }
   }
 
-  void _onStatus(String s) {
-    final nowListening = s == SpeechToText.listeningStatus;
-    _listening = nowListening;
-    _statusCtl.add(nowListening ? SttStatus.listening : SttStatus.idle);
-    if (!nowListening && s == SpeechToText.doneStatus && _userWantsToListen) {
-      // Continuous mode: always restart (engine cycles after each utterance).
-      // One-shot mode: only restart if we haven't yet got a final result.
-      if (!_continuous && _hasReceivedFinalResult) {
-        _userWantsToListen = false;
-        _hasReceivedFinalResult = false;
-        return;
-      }
-      _hasReceivedFinalResult = false;
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (_userWantsToListen && !_listening) _begin();
-      });
+  Future<void> stop() async {
+    _stopLevelPulse();
+    if (_speechService != null) {
+      try {
+        await _speechService!.stop();
+      } catch (_) {/* best-effort */}
+    }
+    await _partialSub?.cancel();
+    await _resultSub?.cancel();
+    _partialSub = null;
+    _resultSub = null;
+    _listening = false;
+    _statusCtl.add(SttStatus.idle);
+  }
+
+  Future<void> _bindStreams() async {
+    await _partialSub?.cancel();
+    await _resultSub?.cancel();
+    _partialSub = _speechService!.onPartial().listen(_onPartial);
+    _resultSub = _speechService!.onResult().listen(_onResult);
+  }
+
+  void _onPartial(String json) {
+    final text = _extract(json, 'partial');
+    if (text.isEmpty) return;
+    _transcriptCtl.add(SttTranscript(
+      text: _smartFormat(text),
+      isFinal: false,
+    ));
+  }
+
+  void _onResult(String json) {
+    final text = _extract(json, 'text');
+    if (text.isEmpty) return;
+    _transcriptCtl.add(SttTranscript(
+      text: _smartFormat(text),
+      isFinal: true,
+    ));
+  }
+
+  String _extract(String json, String key) {
+    try {
+      final m = jsonDecode(json) as Map<String, dynamic>;
+      return (m[key] as String? ?? '').trim();
+    } catch (_) {
+      return '';
     }
   }
 
-  void _onError(SpeechRecognitionError e) {
-    final msg = e.errorMsg;
-    if (msg.contains('error_no_match')) return; // transient
-    _userWantsToListen = false;
-    _statusCtl.add(SttStatus.failed);
+  // ── Synthetic sound-level pulse ──────────────────────────────────────
+  // Vosk's SpeechService owns the mic and doesn't expose buffer-level
+  // metrics. We emit a gently varying pulse so the wave-bar visualiser
+  // doesn't sit flat while the user is talking.
+  void _startLevelPulse() {
+    _stopLevelPulse();
+    _levelPulseTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+      if (!_listening) return;
+      final base = 0.25 + _rng.nextDouble() * 0.5;
+      _levelCtl.add(base);
+    });
   }
 
-  void _onResult(SpeechRecognitionResult r) {
-    if (r.recognizedWords.trim().isEmpty) return;
-    final formatted = _smartFormat(r.recognizedWords);
-    _transcriptCtl.add(SttTranscript(text: formatted, isFinal: r.finalResult));
-    if (r.finalResult) _hasReceivedFinalResult = true;
+  void _stopLevelPulse() {
+    _levelPulseTimer?.cancel();
+    _levelPulseTimer = null;
+    _levelCtl.add(0);
   }
 
-  void _onLevel(double l) {
-    final now = DateTime.now();
-    if (now.difference(_lastLevelTick).inMilliseconds < 100) return;
-    _lastLevelTick = now;
-    _minSoundLevel = min(_minSoundLevel, l);
-    _maxSoundLevel = max(_maxSoundLevel, l);
-    _currentSoundLevel = l;
-    final range = (_maxSoundLevel - _minSoundLevel).abs();
-    final norm = (range < 1e-6 || !_listening)
-        ? 0.0
-        : ((_currentSoundLevel - _minSoundLevel) / range).clamp(0.0, 1.0);
-    _levelCtl.add(norm);
-  }
-
-  void _resetLevels() {
-    _minSoundLevel = VoiceConstants.soundLevelSeedMin;
-    _maxSoundLevel = VoiceConstants.soundLevelSeedMax;
-    _currentSoundLevel = 0;
-  }
-
-  // Smart formatting (lifted from POC)
   String _smartFormat(String text) {
     if (text.isEmpty) return text;
     var r = text;
@@ -181,13 +161,18 @@ class SttService {
   }
 
   Future<void> dispose() async {
+    await stop();
     await _statusCtl.close();
     await _transcriptCtl.close();
     await _levelCtl.close();
+    _speechService?.dispose();
+    _recognizer?.dispose();
+    _model?.dispose();
   }
 }
 
 enum SttStatus { idle, listening, failed }
+
 class SttTranscript {
   const SttTranscript({required this.text, required this.isFinal});
   final String text;

@@ -50,7 +50,18 @@ class VoiceSession {
   // STT pipeline.
   StreamSubscription<SttTranscript>? _transcriptSub;
   Timer? _silenceTimer;
-  static const _silenceTimeout = Duration(milliseconds: 1100);
+  // How long the user can pause mid-thought before we treat the turn as
+  // finished. Vosk's own endpointing fires after ~300ms of silence — way
+  // too aggressive for natural speech ("hello… what's the weather today"
+  // would otherwise commit as two separate messages). We ignore Vosk's
+  // "final" flag for end-of-turn detection and rely on this timer instead.
+  static const _silenceTimeout = Duration(milliseconds: 2500);
+
+  // Accumulated text for the current user turn. Vosk fires `isFinal: true`
+  // after every short pause, so we concatenate those finals locally and
+  // only commit when [_silenceTimeout] elapses with no new audio.
+  final StringBuffer _turnBuffer = StringBuffer();
+  String _lastPartial = '';
 
   // Assistant message stream + TTS chunker.
   StreamSubscription<List<Message>>? _messagesSub;
@@ -197,26 +208,48 @@ class VoiceSession {
     final stateNotifier = _ref.read(voiceStateProvider.notifier);
     final current = _ref.read(voiceStateProvider);
 
-    _ref.read(liveUserTranscriptProvider.notifier).state = text;
+    // Ignore any transcripts that arrive while the AI is talking — that's
+    // the AI's own voice bleeding into the mic from the speaker. The mic is
+    // paused at TTS start and resumed at TTS end (see _ensureTtsActive /
+    // _handleTtsStatus), but in-flight final results can still land here.
+    if (current == VoiceState.aiSpeaking) return;
 
-    if (current == VoiceState.listening) {
+    // Vosk fires `isFinal: true` after every ~300ms of silence even
+    // mid-sentence. We accumulate those finals into [_turnBuffer] and treat
+    // the partial as an in-flight tail; the actual turn commit happens only
+    // when [_silenceTimeout] elapses with no further audio (see
+    // [_forceEndOfTurn]).
+    if (t.isFinal) {
+      if (_turnBuffer.isNotEmpty) _turnBuffer.write(' ');
+      _turnBuffer.write(text);
+      _lastPartial = '';
+    } else {
+      _lastPartial = text;
+    }
+
+    final liveText = _composeLiveText();
+    _ref.read(liveUserTranscriptProvider.notifier).state = liveText;
+
+    if (current == VoiceState.listening ||
+        current == VoiceState.processing) {
       stateNotifier.set(VoiceState.userSpeaking);
     }
 
     _silenceTimer?.cancel();
-    _silenceTimer = Timer(_silenceTimeout, () => _forceEndOfTurn());
+    _silenceTimer = Timer(_silenceTimeout, _forceEndOfTurn);
+  }
 
-    if (t.isFinal) {
-      _silenceTimer?.cancel();
-      await _commitTurn(text);
-    }
+  String _composeLiveText() {
+    if (_turnBuffer.isEmpty) return _lastPartial;
+    if (_lastPartial.isEmpty) return _turnBuffer.toString();
+    return '${_turnBuffer.toString()} $_lastPartial';
   }
 
   Future<void> _forceEndOfTurn() async {
     if (_disposed) return;
     final current = _ref.read(voiceStateProvider);
     if (current != VoiceState.userSpeaking) return;
-    final text = _ref.read(liveUserTranscriptProvider).trim();
+    final text = _composeLiveText().trim();
     if (text.isEmpty) return;
     _silenceTimer?.cancel();
     await _commitTurn(text);
@@ -224,12 +257,13 @@ class VoiceSession {
 
   Future<void> _commitTurn(String text) async {
     if (_disposed) return;
+    _turnBuffer.clear();
+    _lastPartial = '';
     _ref.read(voiceStateProvider.notifier).set(VoiceState.processing);
     _ref.read(liveUserTranscriptProvider.notifier).state = '';
     _ref.read(liveAiTranscriptProvider.notifier).state = '';
 
-    final stt = _ref.read(sttServiceProvider);
-    await stt.stop();
+    // Mic stays open through processing + AI playback (barge-in mode).
 
     try {
       await _ref.read(chatRepositoryProvider).send(
@@ -238,9 +272,6 @@ class VoiceSession {
           );
     } catch (_) {
       _ref.read(voiceStateProvider.notifier).set(VoiceState.listening);
-      await _ref.read(voiceCoordinatorProvider).startListening(
-            begin: () => stt.startContinuous(),
-          );
     }
   }
 
@@ -315,6 +346,12 @@ class VoiceSession {
     if (_ttsActive) return;
     _ttsActive = true;
     _ref.read(voiceStateProvider.notifier).set(VoiceState.aiSpeaking);
+    // Pause the mic so the AI's own voice through the speaker doesn't get
+    // picked up as user input. Auto-resumes in _finishAssistantTurn.
+    final stt = _ref.read(sttServiceProvider);
+    await stt.stop();
+    _silenceTimer?.cancel();
+    _ref.read(liveUserTranscriptProvider.notifier).state = '';
   }
 
   Future<void> _finishAssistantTurn() async {
@@ -335,8 +372,7 @@ class VoiceSession {
     _activeAssistantKey = null;
     _chunkCursor = 0;
 
-    // Only auto-resume STT if we're in voice mode AND the user hasn't
-    // explicitly paused.
+    // Resume the mic now that the speaker is quiet.
     if (_ref.read(uiModeProvider) != UiMode.voice) return;
     final state = _ref.read(voiceStateProvider);
     if (state == VoiceState.idle || state == VoiceState.paused) return;

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Voice</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ─── Theme tokens ─────────────────────────────── */
+  :root {
+    --bg: #000;
+    --bg-outer: radial-gradient(ellipse at center, #161616 0%, #050505 70%);
+    --silhouette: #000;
+    --silhouette-opacity: 0.86;
+    --mic-bg: rgba(255, 255, 255, 0.08);
+    --mic-bg-active: rgba(255, 255, 255, 0.18);
+    --mic-border: rgba(255, 255, 255, 0.16);
+    --mic-border-active: rgba(255, 255, 255, 0.4);
+    --mic-icon: rgba(255, 255, 255, 0.9);
+    --mic-icon-active: #fff;
+    --home-indicator: rgba(255, 255, 255, 0.35);
+    --chip-bg: rgba(255, 255, 255, 0.06);
+    --chip-bg-hover: rgba(255, 255, 255, 0.12);
+    --chip-border: rgba(255, 255, 255, 0.12);
+    --chip-icon: rgba(255, 255, 255, 0.75);
+
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  :root[data-theme="light"] {
+    --bg: #f5f5f7;
+    --bg-outer: radial-gradient(ellipse at center, #ebebed 0%, #c9c9cd 70%);
+    --silhouette: #f5f5f7;
+    --silhouette-opacity: 0.88;
+    --mic-bg: rgba(0, 0, 0, 0.04);
+    --mic-bg-active: rgba(0, 0, 0, 0.10);
+    --mic-border: rgba(0, 0, 0, 0.12);
+    --mic-border-active: rgba(0, 0, 0, 0.32);
+    --mic-icon: rgba(0, 0, 0, 0.7);
+    --mic-icon-active: rgba(0, 0, 0, 0.92);
+    --home-indicator: rgba(0, 0, 0, 0.3);
+    --chip-bg: rgba(0, 0, 0, 0.04);
+    --chip-bg-hover: rgba(0, 0, 0, 0.09);
+    --chip-border: rgba(0, 0, 0, 0.1);
+    --chip-icon: rgba(0, 0, 0, 0.7);
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: var(--bg-outer);
+    transition: background 0.5s var(--ease);
+  }
+
+  .phone {
+    position: relative;
+    width: 100%;
+    max-width: 390px;
+    height: 100%;
+    max-height: 844px;
+    aspect-ratio: 390 / 844;
+    background: var(--bg);
+    border-radius: 52px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 8px #1a1a1a,
+      0 0 0 9px #2a2a2a,
+      0 60px 120px -20px rgba(0, 0, 0, 0.7),
+      0 30px 60px -30px rgba(0, 0, 0, 0.5);
+    transition: background 0.5s var(--ease);
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 0; }
+    .phone {
+      max-width: 100%;
+      max-height: 100%;
+      height: 100vh;
+      height: 100dvh;
+      border-radius: 0;
+      aspect-ratio: auto;
+      box-shadow: none;
+    }
+  }
+
+  .screen {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    transition: background 0.5s var(--ease);
+  }
+
+  /* ─── Single always-visible wave stage ───────────── */
+  .wave-stage {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 75%;
+    pointer-events: none;
+  }
+
+  .wave {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .wave .silhouette {
+    fill: var(--silhouette);
+    opacity: var(--silhouette-opacity);
+    transition: fill 0.5s var(--ease);
+  }
+
+  /* ─── Mic button ─────────────────────────────────── */
+  .mic-btn {
+    position: absolute;
+    left: 50%;
+    bottom: 88px;
+    transform: translateX(-50%);
+    width: 76px;
+    height: 76px;
+    border-radius: 50%;
+    background: var(--mic-bg);
+    border: 1px solid var(--mic-border);
+    backdrop-filter: blur(16px) saturate(140%);
+    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--mic-icon);
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+    z-index: 10;
+    transition:
+      background-color 0.5s var(--ease),
+      border-color 0.5s var(--ease),
+      color 0.5s var(--ease);
+  }
+
+  .listening .mic-btn {
+    background: var(--mic-bg-active);
+    border-color: var(--mic-border-active);
+    color: var(--mic-icon-active);
+  }
+
+  .mic-btn:focus-visible {
+    outline: 2px solid var(--mic-border-active);
+    outline-offset: 4px;
+  }
+
+  .mic-icon {
+    width: 28px;
+    height: 28px;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* ─── Theme toggle ──────────────────────────────── */
+  .theme-toggle {
+    position: absolute;
+    top: 18px;
+    right: 20px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--chip-icon);
+    z-index: 30;
+    -webkit-tap-highlight-color: transparent;
+    outline: none;
+    transition:
+      background-color 0.4s var(--ease),
+      border-color 0.4s var(--ease),
+      color 0.4s var(--ease);
+  }
+
+  .theme-toggle:hover { background: var(--chip-bg-hover); }
+  .theme-toggle:focus-visible {
+    outline: 2px solid var(--mic-border-active);
+    outline-offset: 3px;
+  }
+
+  .theme-toggle svg {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    position: absolute;
+    transition: opacity 0.35s var(--ease), transform 0.45s var(--ease);
+  }
+
+  .theme-toggle .icon-moon { opacity: 1; transform: rotate(0deg) scale(1); }
+  .theme-toggle .icon-sun  { opacity: 0; transform: rotate(-90deg) scale(0.6); }
+  :root[data-theme="light"] .theme-toggle .icon-moon { opacity: 0; transform: rotate(90deg) scale(0.6); }
+  :root[data-theme="light"] .theme-toggle .icon-sun  { opacity: 1; transform: rotate(0deg) scale(1); }
+
+  /* ─── Home indicator ─────────────────────────────── */
+  .home-indicator {
+    position: absolute;
+    left: 50%;
+    bottom: 8px;
+    transform: translateX(-50%);
+    width: 134px;
+    height: 5px;
+    background: var(--home-indicator);
+    border-radius: 3px;
+    z-index: 20;
+    transition: background 0.5s var(--ease);
+  }
+</style>
+</head>
+<body>
+  <div class="phone">
+    <div class="screen" id="screen">
+
+      <!-- Theme toggle -->
+      <button class="theme-toggle" id="themeBtn" aria-label="Toggle theme">
+        <svg class="icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+        </svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <line x1="12" y1="2" x2="12" y2="4"/>
+          <line x1="12" y1="20" x2="12" y2="22"/>
+          <line x1="2" y1="12" x2="4" y2="12"/>
+          <line x1="20" y1="12" x2="22" y2="12"/>
+          <line x1="4.93" y1="4.93" x2="6.34" y2="6.34"/>
+          <line x1="17.66" y1="17.66" x2="19.07" y2="19.07"/>
+          <line x1="4.93" y1="19.07" x2="6.34" y2="17.66"/>
+          <line x1="17.66" y1="6.34" x2="19.07" y2="4.93"/>
+        </svg>
+      </button>
+
+      <!-- The wave is always on; only its motion intensity changes between states -->
+      <div class="wave-stage">
+        <svg class="wave" viewBox="0 0 400 400" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="palette" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%"   stop-color="rgb(150, 70, 240)"/>
+              <stop offset="14%"  stop-color="rgb(220, 100, 230)"/>
+              <stop offset="28%"  stop-color="rgb(180, 100, 255)"/>
+              <stop offset="42%"  stop-color="rgb(80, 180, 255)"/>
+              <stop offset="54%"  stop-color="rgb(110, 230, 200)"/>
+              <stop offset="64%"  stop-color="rgb(150, 255, 140)"/>
+              <stop offset="76%"  stop-color="rgb(255, 220, 100)"/>
+              <stop offset="88%"  stop-color="rgb(255, 150, 80)"/>
+              <stop offset="100%" stop-color="rgb(230, 80, 80)"/>
+            </linearGradient>
+
+            <filter id="f-halo" filterUnits="userSpaceOnUse" x="-100" y="-200" width="600" height="800">
+              <feGaussianBlur stdDeviation="38"/>
+            </filter>
+            <filter id="f-mid" filterUnits="userSpaceOnUse" x="-80" y="-150" width="560" height="700">
+              <feGaussianBlur stdDeviation="14"/>
+            </filter>
+            <filter id="f-core" filterUnits="userSpaceOnUse" x="-40" y="-80" width="480" height="560">
+              <feGaussianBlur stdDeviation="5"/>
+            </filter>
+
+            <linearGradient id="depthFade" x1="0" y1="160" x2="0" y2="395" gradientUnits="userSpaceOnUse">
+              <stop offset="0%"   stop-color="white" stop-opacity="0.95"/>
+              <stop offset="35%"  stop-color="white" stop-opacity="0.55"/>
+              <stop offset="75%"  stop-color="white" stop-opacity="0.12"/>
+              <stop offset="100%" stop-color="white" stop-opacity="0"/>
+            </linearGradient>
+            <mask id="depthMask">
+              <rect width="400" height="400" fill="url(#depthFade)"/>
+            </mask>
+          </defs>
+
+          <path id="glowHalo" stroke="url(#palette)" stroke-width="160" stroke-linejoin="round" fill="none" filter="url(#f-halo)" opacity="0.35"></path>
+          <path id="glowMid"  stroke="url(#palette)" stroke-width="60"  stroke-linejoin="round" fill="none" filter="url(#f-mid)"  opacity="0.55"></path>
+          <path id="glowCore" stroke="url(#palette)" stroke-width="14"  stroke-linejoin="round" fill="none" filter="url(#f-core)" opacity="0.85"></path>
+          <path id="waveBlack" class="silhouette"></path>
+          <path id="waveMirror" fill="url(#palette)" mask="url(#depthMask)" opacity="0.7"></path>
+        </svg>
+      </div>
+
+      <!-- Mic button -->
+      <button class="mic-btn" id="micBtn" aria-label="Toggle voice listening" aria-pressed="false">
+        <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <rect x="9" y="2" width="6" height="13" rx="3"/>
+          <path d="M5 11a7 7 0 0 0 14 0"/>
+          <line x1="12" y1="18" x2="12" y2="22"/>
+        </svg>
+      </button>
+
+      <div class="home-indicator"></div>
+    </div>
+  </div>
+
+  <script>
+    /* ─── Theme handling ──────────────────────────── */
+    const html     = document.documentElement;
+    const themeBtn = document.getElementById('themeBtn');
+    const mql      = window.matchMedia('(prefers-color-scheme: light)');
+
+    let theme = mql.matches ? 'light' : 'dark';
+    let userOverrode = false;
+    html.setAttribute('data-theme', theme);
+
+    themeBtn.addEventListener('click', () => {
+      userOverrode = true;
+      theme = theme === 'light' ? 'dark' : 'light';
+      html.setAttribute('data-theme', theme);
+    });
+
+    mql.addEventListener('change', e => {
+      if (userOverrode) return;
+      theme = e.matches ? 'light' : 'dark';
+      html.setAttribute('data-theme', theme);
+    });
+
+    /* ─── Wave animation ──────────────────────────── */
+    const glowHalo   = document.getElementById('glowHalo');
+    const glowMid    = document.getElementById('glowMid');
+    const glowCore   = document.getElementById('glowCore');
+    const waveBlack  = document.getElementById('waveBlack');
+    const waveMirror = document.getElementById('waveMirror');
+
+    const W      = 400;
+    const H      = 400;
+    const STEPS  = 72;
+    const BASE_Y = 230;
+
+    // Two motion profiles — only intensity changes, not colour.
+    //   CALM   → almost a flat horizon, slow drift
+    //   ACTIVE → pronounced waves, faster motion
+    const CALM   = { amps: [4, 2.5, 1],   speed: 0.5 };
+    const ACTIVE = { amps: [32, 20, 11],  speed: 1.0 };
+
+    // Current (interpolated) state — starts in CALM
+    const amps = [...CALM.amps];
+    let   speed = CALM.speed;
+    // Target the loop lerps toward
+    let target = CALM;
+
+    let t    = 0;
+    let last = performance.now();
+
+    function buildWave(time) {
+      let top = '';
+      for (let i = 0; i <= STEPS; i++) {
+        const u = i / STEPS;
+        const x = u * W;
+
+        // Plateau envelope keeps edges anchored to BASE_Y but lets the wave
+        // ride near full amplitude across most of the width.
+        const env = Math.pow(Math.sin(Math.PI * u), 0.4);
+
+        const motion =
+            Math.sin(time * 0.45 + i * 0.20) * amps[0]
+          + Math.sin(time * 0.31 + i * 0.34) * amps[1]
+          + Math.sin(time * 0.78 + i * 0.11) * amps[2];
+
+        const y = BASE_Y + motion * env;
+        top += (i === 0 ? 'M ' : ' L ') + x.toFixed(1) + ' ' + y.toFixed(1);
+      }
+
+      const fill = top + ` L ${W} ${H} L 0 ${H} Z`;
+
+      glowHalo.setAttribute('d', top);
+      glowMid.setAttribute('d', top);
+      glowCore.setAttribute('d', top);
+      waveBlack.setAttribute('d', fill);
+      waveMirror.setAttribute('d', fill);
+    }
+
+    function loop(now) {
+      const dt = Math.min((now - last) / 1000, 0.05);
+      last = now;
+
+      // Frame-rate-independent exponential lerp: ~99% settled in 1s.
+      const lerp = 1 - Math.pow(0.0001, dt);
+      amps[0] += (target.amps[0] - amps[0]) * lerp;
+      amps[1] += (target.amps[1] - amps[1]) * lerp;
+      amps[2] += (target.amps[2] - amps[2]) * lerp;
+      speed   += (target.speed   - speed)   * lerp;
+
+      // Time advances at the (interpolated) current speed.
+      t += dt * speed;
+      buildWave(t);
+
+      requestAnimationFrame(loop);
+    }
+
+    buildWave(0);
+    requestAnimationFrame(loop);
+
+    /* ─── Mic toggle ──────────────────────────────── */
+    const screen = document.getElementById('screen');
+    const micBtn = document.getElementById('micBtn');
+    let listening = false;
+
+    function toggle() {
+      listening = !listening;
+      screen.classList.toggle('listening', listening);
+      micBtn.setAttribute('aria-pressed', String(listening));
+      target = listening ? ACTIVE : CALM;
+      if (navigator.vibrate) navigator.vibrate(6);
+    }
+
+    micBtn.addEventListener('click', toggle);
+    micBtn.addEventListener('keydown', (e) => {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        toggle();
+      }
+    });
+  </script>
+</body>
+</html>

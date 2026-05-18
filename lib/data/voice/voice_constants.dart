@@ -6,8 +6,11 @@ class VoiceConstants {
   // voices feel robotic.
   static const double speechRate = 0.50;
   static const double pitch = 1.0;
-  static const Duration pauseFor = Duration(seconds: 3);
-  static const Duration listenFor = Duration(minutes: 2);
+  // Long pauseFor minimises how often the Android RecognitionService
+  // start/stop beep fires during continuous listening. Each session ends
+  // when this elapses with no speech, then auto-restarts.
+  static const Duration pauseFor = Duration(seconds: 30);
+  static const Duration listenFor = Duration(minutes: 5);
   static const ListenMode listenMode = ListenMode.dictation;
   static const bool autoPunctuation = true;
 
