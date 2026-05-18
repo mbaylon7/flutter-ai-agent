@@ -48,7 +48,7 @@ class TtsService {
 
   static const _defaultSpeakerId = 9; // Amanda (Female)
   int _speakerId = _defaultSpeakerId;
-  final double _speed = 0.8;
+  final double _speed = 1.0;
 
   // Chunk queue for back-to-back synthesis. enqueueChunk() appends; _drain()
   // walks the queue and plays each utterance in turn.
@@ -178,7 +178,7 @@ class TtsService {
           // beat. Falls back to a small generic gap for chunks without
           // trailing punctuation (e.g. force-split unpunctuated monologues).
           final lastCh = previousChunk[previousChunk.length - 1];
-          final ms = lastCh == ',' ? 80 : 150;
+          final ms = lastCh == ',' ? 50 : 100;
           await Future<void>.delayed(Duration(milliseconds: ms));
         }
         previousChunk = text;

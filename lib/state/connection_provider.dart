@@ -75,7 +75,7 @@ const _kAutoPairToken = 'c60074f7-c5fb-493b-a3a0-d6fe08d47a9a';
 /// existing UI shell (history drawer, voice/chat modes, theme, settings)
 /// without requiring network or a paired openclaw server. Flip to `false`
 /// in Phase 2 to re-enable the real reconnect path.
-const _kPhase1BypassGateway = true;
+const _kPhase1BypassGateway = false;
 
 class AutoReconnectController extends StateNotifier<AsyncValue<bool>> {
   AutoReconnectController(this._ref) : super(const AsyncValue.loading()) {
@@ -115,6 +115,8 @@ class AutoReconnectController extends StateNotifier<AsyncValue<bool>> {
         final hello = await _ref.read(gatewayClientProvider).connect(
               ConnectionConfig(wsUrl: url, token: _kAutoPairToken),
             );
+        // ignore: avoid_print
+        print('[AutoReconnect] paired ok, deviceToken=${hello.deviceToken != null}');
         if (hello.deviceToken != null) {
           await secure.write('oc.deviceToken', hello.deviceToken!);
           await secure.write('oc.wsUrl', url);
@@ -122,8 +124,9 @@ class AutoReconnectController extends StateNotifier<AsyncValue<bool>> {
         if (!mounted) return;
         state = const AsyncValue.data(true);
         return;
-      } catch (_) {
-        // Try next candidate URL.
+      } catch (e, st) {
+        // ignore: avoid_print
+        print('[AutoReconnect] connect failed for $url: $e\n$st');
       }
     }
     if (!mounted) return;

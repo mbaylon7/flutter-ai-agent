@@ -62,7 +62,7 @@ class SttService {
         transducer: transducer,
         tokens: tokens,
         modelType: 'zipformer2',
-        numThreads: 4,
+        numThreads: 2,
         debug: false,
       );
       final config = sherpa.OnlineRecognizerConfig(
@@ -155,10 +155,15 @@ class SttService {
     _stream = null;
   }
 
+  int _pcmChunkCount = 0;
   void _onPcm(Uint8List bytes) {
     final stream = _stream;
     final rec = _recognizer;
-    if (stream == null || rec == null) return;
+    if (stream == null || rec == null) {
+      // ignore: avoid_print
+      print('[SttService] onPcm dropped: stream=${stream != null} rec=${rec != null}');
+      return;
+    }
 
     final samples = convertBytesToFloat32(bytes);
     _emitLevel(samples);
@@ -170,6 +175,14 @@ class SttService {
 
     final text = rec.getResult(stream).text.trim();
     final endpoint = rec.isEndpoint(stream);
+
+    // Log every 50 chunks (~5s @ 100ms chunks) so we can see if PCM keeps
+    // flowing without spamming.
+    _pcmChunkCount++;
+    if (_pcmChunkCount % 50 == 0) {
+      // ignore: avoid_print
+      print('[SttService] pcm tick chunk#$_pcmChunkCount bytes=${bytes.length} text="$text" endpoint=$endpoint');
+    }
 
     if (text.isNotEmpty && text != _lastEmittedText) {
       _lastEmittedText = text;

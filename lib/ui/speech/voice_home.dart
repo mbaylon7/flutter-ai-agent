@@ -66,7 +66,7 @@ class _VoiceHomeState extends ConsumerState<VoiceHome>
       if (!mounted) return;
       if (s == TtsStatus.speaking) {
         _ttsLevelTimer?.cancel();
-        _ttsLevelTimer = Timer.periodic(const Duration(milliseconds: 80), (_) {
+        _ttsLevelTimer = Timer.periodic(const Duration(milliseconds: 140), (_) {
           if (!mounted) return;
           setState(() => _level = 0.35 + _ttsRng.nextDouble() * 0.55);
         });

@@ -208,6 +208,9 @@ class VoiceSession {
     final text = t.text.trim();
     if (text.isEmpty) return;
 
+    // ignore: avoid_print
+    print('[VoiceSession] transcript isFinal=${t.isFinal} state=${_ref.read(voiceStateProvider)} text="$text"');
+
     final stateNotifier = _ref.read(voiceStateProvider.notifier);
     final current = _ref.read(voiceStateProvider);
 
@@ -251,6 +254,8 @@ class VoiceSession {
   Future<void> _forceEndOfTurn() async {
     if (_disposed) return;
     final current = _ref.read(voiceStateProvider);
+    // ignore: avoid_print
+    print('[VoiceSession] forceEndOfTurn state=$current buffer="${_turnBuffer.toString()}" partial="$_lastPartial"');
     if (current != VoiceState.userSpeaking) return;
     final text = _composeLiveText().trim();
     if (text.isEmpty) return;
@@ -266,17 +271,18 @@ class VoiceSession {
     _ref.read(liveUserTranscriptProvider.notifier).state = '';
     _ref.read(liveAiTranscriptProvider.notifier).state = '';
 
-    // Phase 1: bypass the LLM/gateway entirely. Echo the user transcript
-    // straight back via the chat repository, which inserts both the user
-    // and a finalized assistant message — the existing message stream
-    // pipeline then routes the echo through the TTS chunker just like a
-    // real AI reply would.
     try {
-      await _ref.read(chatRepositoryProvider).sendEcho(
+      // ignore: avoid_print
+      print('[VoiceSession] commitTurn: send len=${text.length}');
+      await _ref.read(chatRepositoryProvider).send(
             sessionKey: sessionKey,
             text: text,
           );
-    } catch (_) {
+      // ignore: avoid_print
+      print('[VoiceSession] commitTurn: send OK');
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[VoiceSession] commitTurn: send FAILED: $e\n$st');
       _ref.read(voiceStateProvider.notifier).set(VoiceState.listening);
     }
   }
@@ -362,7 +368,11 @@ class VoiceSession {
 
   Future<void> _finishAssistantTurn() async {
     final tts = _ref.read(ttsServiceProvider);
+    // ignore: avoid_print
+    print('[VoiceSession] finish: awaiting TTS drain');
     await tts.awaitDrained();
+    // ignore: avoid_print
+    print('[VoiceSession] finish: TTS drained, uiMode=${_ref.read(uiModeProvider)} vstate=${_ref.read(voiceStateProvider)}');
     if (_disposed) return;
 
     // Flush any in-flight "currently speaking" chunk to the spoken history
@@ -393,9 +403,13 @@ class VoiceSession {
 
     _ref.read(voiceStateProvider.notifier).set(VoiceState.listening);
     final stt = _ref.read(sttServiceProvider);
+    // ignore: avoid_print
+    print('[VoiceSession] finish: restarting mic (stt.isAvailable=${stt.isAvailable})');
     await _ref.read(voiceCoordinatorProvider).startListening(
           begin: () => stt.startContinuous(),
         );
+    // ignore: avoid_print
+    print('[VoiceSession] finish: mic restart returned, stt.isListening=${stt.isListening}');
   }
 
   // --- TTS progress (word-by-word subtitle sync) -----------------------

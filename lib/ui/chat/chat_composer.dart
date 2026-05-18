@@ -75,10 +75,9 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
     _controller.clear();
 
     try {
-      // Phase 1: echo path — no LLM/gateway. Same UX as real send.
       await ref
           .read(chatRepositoryProvider)
-          .sendEcho(sessionKey: key, text: text);
+          .send(sessionKey: key, text: text);
       if (isFirstMessage) {
         unawaited(_popSessionWhenAiResponds(
           sessionKey: key,
