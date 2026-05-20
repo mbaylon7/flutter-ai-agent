@@ -1,10 +1,12 @@
 import 'dart:io';
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/app.dart';
 import 'package:stt_tts/data/cache/local_store.dart';
+import 'package:stt_tts/firebase_options.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 
 class _OpenClawHttpOverrides extends HttpOverrides {
@@ -27,6 +29,9 @@ void main() async {
     systemNavigationBarContrastEnforced: false,
   ));
   HttpOverrides.global = _OpenClawHttpOverrides();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   final store = SqfliteLocalStore();
   await store.open();
   runApp(ProviderScope(

@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw — Sign in</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* ─── Theme tokens (matches voice-ui) ────────────── */
+  :root {
+    --bg: #000;
+    --bg-outer: radial-gradient(ellipse at center, #161616 0%, #050505 70%);
+
+    --text: rgba(255, 255, 255, 0.94);
+    --text-muted: rgba(255, 255, 255, 0.42);
+    --text-soft: rgba(255, 255, 255, 0.66);
+    --accent: #6EAAFF;
+
+    --surface: rgba(255, 255, 255, 0.05);
+    --surface-active: rgba(255, 255, 255, 0.10);
+    --border: rgba(255, 255, 255, 0.09);
+    --border-strong: rgba(255, 255, 255, 0.16);
+
+    --btn-bg: rgba(255, 255, 255, 0.06);
+    --btn-bg-hover: rgba(255, 255, 255, 0.10);
+
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --spring: cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  :root[data-theme="light"] {
+    --bg: #f5f5f7;
+    --bg-outer: radial-gradient(ellipse at center, #ebebed 0%, #c9c9cd 70%);
+
+    --text: rgba(0, 0, 0, 0.86);
+    --text-muted: rgba(0, 0, 0, 0.45);
+    --text-soft: rgba(0, 0, 0, 0.6);
+    --accent: #1464dc;
+
+    --surface: rgba(0, 0, 0, 0.035);
+    --surface-active: rgba(0, 0, 0, 0.07);
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.16);
+
+    --btn-bg: rgba(0, 0, 0, 0.04);
+    --btn-bg-hover: rgba(0, 0, 0, 0.08);
+  }
+
+  html, body {
+    height: 100%;
+    font-family: 'Geist', system-ui, -apple-system, sans-serif;
+    background: var(--bg-outer);
+    color: var(--text);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    transition: background 0.5s var(--ease);
+  }
+
+  /* ─── Phone frame ───────────────────────────────── */
+  .stage {
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+
+  .frame {
+    width: 380px;
+    height: 760px;
+    background: var(--bg);
+    border-radius: 44px;
+    overflow: hidden;
+    position: relative;
+    transition: background 0.5s var(--ease);
+  }
+
+  @media (max-width: 480px) {
+    .stage { padding: 0; }
+    .frame {
+      width: 100vw;
+      height: 100vh;
+      border-radius: 0;
+    }
+  }
+
+  /* ─── Signin screen ─────────────────────────────── */
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 56px 28px 28px;
+  }
+
+  /* Brand glow — soft static rainbow above the logo to tie this page
+     to the voice UI's aurora aesthetic */
+  .brand-glow {
+    position: absolute;
+    top: -120px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 460px;
+    height: 320px;
+    pointer-events: none;
+    opacity: 0.55;
+    filter: blur(60px);
+    background:
+      radial-gradient(ellipse 50% 50% at 25% 60%, rgba(150, 70, 240, 0.55), transparent 70%),
+      radial-gradient(ellipse 40% 40% at 50% 50%, rgba(80, 180, 255, 0.45), transparent 70%),
+      radial-gradient(ellipse 50% 50% at 75% 60%, rgba(255, 150, 80, 0.45), transparent 70%);
+    transition: opacity 0.5s var(--ease);
+  }
+
+  :root[data-theme="light"] .brand-glow { opacity: 0.4; }
+
+  /* Brand mark */
+  .brand {
+    text-align: center;
+    margin-top: 36px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .logo {
+    width: 56px; height: 56px;
+    margin: 0 auto 18px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #6EAAFF 0%, #B464FF 60%, #FF6E96 100%);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow:
+      0 8px 24px rgba(110, 170, 255, 0.25),
+      0 1px 0 rgba(255, 255, 255, 0.15) inset;
+  }
+  .logo svg { width: 28px; height: 28px; color: #fff; }
+
+  .brand-name {
+    font-size: 26px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text);
+  }
+
+  .tagline {
+    margin-top: 8px;
+    font-size: 13.5px;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+
+  /* Form area */
+  .actions {
+    margin-top: 130px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Form inputs */
+  .field {
+    position: relative;
+  }
+  .field input {
+    width: 100%;
+    height: 50px;
+    padding: 0 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border-strong);
+    background: var(--btn-bg);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14.5px;
+    font-weight: 400;
+    outline: none;
+    transition: border-color 0.2s var(--ease), background-color 0.2s var(--ease);
+  }
+  .field input::placeholder { color: var(--text-muted); }
+  .field input:focus {
+    border-color: var(--accent);
+    background: var(--btn-bg-hover);
+  }
+
+  /* Password show/hide */
+  .field-pw input { padding-right: 46px; }
+  .eye-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    border-radius: 8px;
+    -webkit-tap-highlight-color: transparent;
+    transition: color 0.2s var(--ease), background-color 0.2s var(--ease);
+  }
+  .eye-btn:hover { color: var(--text); background: var(--surface); }
+  .eye-btn svg { width: 18px; height: 18px; }
+
+  /* Forgot password link */
+  .forgot {
+    align-self: flex-end;
+    margin-top: -2px;
+    margin-bottom: 6px;
+    font-size: 12px;
+    color: var(--text-soft);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .forgot:hover { color: var(--text); text-decoration: underline; }
+
+  /* Primary CTA */
+  .auth-btn.primary {
+    background: var(--text);
+    color: var(--bg);
+    border-color: transparent;
+    font-weight: 600;
+  }
+  .auth-btn.primary:hover { background: var(--text); opacity: 0.9; }
+
+  /* OAuth icons row */
+  .oauth-icons {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+    gap: 14px;
+    position: relative;
+    z-index: 1;
+  }
+  .oauth-icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--btn-bg);
+    border: 1px solid var(--border-strong);
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    -webkit-tap-highlight-color: transparent;
+    transition:
+      background-color 0.2s var(--ease),
+      transform 0.15s var(--ease),
+      border-color 0.2s var(--ease);
+  }
+  .oauth-icon-btn:hover { background: var(--btn-bg-hover); }
+  .oauth-icon-btn:active { transform: scale(0.92); }
+  .oauth-icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .oauth-icon-btn svg { width: 20px; height: 20px; }
+
+  .auth-btn {
+    height: 50px;
+    border-radius: 14px;
+    border: 1px solid var(--border-strong);
+    background: var(--btn-bg);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 14.5px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    transition:
+      background-color 0.25s var(--ease),
+      transform 0.15s var(--ease),
+      border-color 0.25s var(--ease);
+  }
+  .auth-btn:hover { background: var(--btn-bg-hover); }
+  .auth-btn:active { transform: scale(0.985); }
+  .auth-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+  .auth-btn .ic { width: 18px; height: 18px; flex-shrink: 0; }
+
+  /* Terms footer */
+  .terms {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    line-height: 1.55;
+    position: relative;
+    z-index: 1;
+  }
+  .terms a {
+    color: var(--text-soft);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .terms a:hover { color: var(--text); text-decoration: underline; }
+
+  /* Home indicator (iOS bar) */
+  .home-bar {
+    position: absolute;
+    bottom: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 134px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.35);
+  }
+  :root[data-theme="light"] .home-bar { background: rgba(0, 0, 0, 0.3); }
+
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="frame">
+      <div class="screen">
+        <div class="brand-glow"></div>
+
+        <!-- Brand -->
+        <div class="brand">
+          <div class="logo">
+            <!-- Stylized lightning / claw mark -->
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 2L4 13h7l-1 9 9-11h-7l1-9z" fill="currentColor"/>
+            </svg>
+          </div>
+          <h1 class="brand-name">Welcome to OpenClaw</h1>
+          <p class="tagline">Sign in or create an account</p>
+        </div>
+
+        <!-- Form -->
+        <div class="actions">
+          <div class="field">
+            <input
+              type="email"
+              id="emailInput"
+              placeholder="Email address"
+              autocomplete="email"
+              spellcheck="false"
+              autocapitalize="off"
+            >
+          </div>
+          <div class="field field-pw">
+            <input
+              type="password"
+              id="pwInput"
+              placeholder="Password"
+              autocomplete="current-password"
+            >
+            <button class="eye-btn" id="eyeBtn" aria-label="Show password" type="button">
+              <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                <circle cx="12" cy="12" r="3"/>
+              </svg>
+              <svg id="eyeClosed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="display:none">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/>
+                <line x1="1" y1="1" x2="23" y2="23"/>
+              </svg>
+            </button>
+          </div>
+          <a href="#" class="forgot">Forgot password?</a>
+          <button class="auth-btn primary" id="continueBtn">
+            <span>Continue</span>
+          </button>
+        </div>
+
+        <!-- Terms -->
+        <p class="terms">
+          By continuing, you agree to OpenClaw's<br>
+          <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>
+        </p>
+
+        <!-- OAuth icon row -->
+        <div class="oauth-icons">
+          <button class="oauth-icon-btn" id="appleBtn" aria-label="Continue with Apple">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M16.365 1.43c0 1.14-.396 2.213-1.187 3.224-.954 1.201-2.116 1.895-3.378 1.792a3.31 3.31 0 0 1-.024-.395c0-1.094.453-2.262 1.256-3.245.4-.502.91-.92 1.526-1.253A4.502 4.502 0 0 1 16.341 1c.012.143.024.288.024.43zM20.665 17.62c-.6 1.385-.88 2.005-1.654 3.234-1.077 1.71-2.596 3.84-4.478 3.857-1.673.015-2.103-1.087-4.371-1.075-2.268.013-2.74 1.094-4.413 1.078-1.882-.017-3.32-1.939-4.397-3.649C-1.69 16.84-2.013 11.21.65 8.193c1.89-2.14 4.864-3.394 7.66-3.394 1.713 0 3.135.69 4.27 1.045 1.094-.34 2.642-1.045 4.41-1.045a8.04 8.04 0 0 1 1.83.21c3.084.75 4.95 2.834 4.95 2.834-2.81 1.534-2.4 5.572-.105 6.722-.66 1.585-.997 2.225-1.21 3.054z"/>
+            </svg>
+          </button>
+          <button class="oauth-icon-btn" id="googleBtn" aria-label="Continue with Google">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09 0-.73.13-1.43.35-2.09V7.07H2.18a10.99 10.99 0 0 0 0 9.86l3.66-2.84z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84C6.71 7.31 9.14 5.38 12 5.38z" fill="#EA4335"/>
+            </svg>
+          </button>
+          <button class="oauth-icon-btn" id="microsoftBtn" aria-label="Continue with Microsoft">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2"    y="2"    width="9.5" height="9.5" fill="#F25022"/>
+              <rect x="12.5" y="2"    width="9.5" height="9.5" fill="#7FBA00"/>
+              <rect x="2"    y="12.5" width="9.5" height="9.5" fill="#00A4EF"/>
+              <rect x="12.5" y="12.5" width="9.5" height="9.5" fill="#FFB900"/>
+            </svg>
+          </button>
+          <button class="oauth-icon-btn" id="githubBtn" aria-label="Continue with GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 .5C5.4.5 0 5.9 0 12.5c0 5.3 3.4 9.8 8.2 11.4.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.5-1.4-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2 1-.3 2-.4 3-.4s2 .1 3 .4c2.3-1.5 3.3-1.2 3.3-1.2.7 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.8-1.6 8.2-6.1 8.2-11.4C24 5.9 18.6.5 12 .5z"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- iOS home bar -->
+        <div class="home-bar"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  /* ─── Theme handling (follows system) ──────────── */
+  const html = document.documentElement;
+  const mql = window.matchMedia('(prefers-color-scheme: light)');
+  html.setAttribute('data-theme', mql.matches ? 'light' : 'dark');
+  mql.addEventListener('change', e => {
+    html.setAttribute('data-theme', e.matches ? 'light' : 'dark');
+  });
+
+  /* ─── Password show/hide ───────────────────────── */
+  const pwInput   = document.getElementById('pwInput');
+  const eyeBtn    = document.getElementById('eyeBtn');
+  const eyeOpen   = document.getElementById('eyeOpen');
+  const eyeClosed = document.getElementById('eyeClosed');
+
+  eyeBtn.addEventListener('click', () => {
+    const showing = pwInput.type === 'text';
+    pwInput.type = showing ? 'password' : 'text';
+    eyeOpen.style.display   = showing ? 'block' : 'none';
+    eyeClosed.style.display = showing ? 'none'  : 'block';
+    eyeBtn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
+  });
+
+  /* ─── Form submit + OAuth stubs ────────────────── */
+  const emailInput = document.getElementById('emailInput');
+  const continueBtn = document.getElementById('continueBtn');
+
+  continueBtn.addEventListener('click', () => {
+    const email = emailInput.value.trim();
+    const pw    = pwInput.value;
+    if (!email || !pw) {
+      console.log('Email and password required');
+      return;
+    }
+    console.log('Email sign-in:', email);
+    // POST to your auth endpoint here
+  });
+
+  pwInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') continueBtn.click();
+  });
+
+  document.getElementById('googleBtn').addEventListener('click', () => {
+    console.log('Google sign-in clicked');
+    // window.location.href = '/auth/google';
+  });
+  document.getElementById('appleBtn').addEventListener('click', () => {
+    console.log('Apple sign-in clicked');
+    // window.location.href = '/auth/apple';
+  });
+  document.getElementById('microsoftBtn').addEventListener('click', () => {
+    console.log('Microsoft sign-in clicked');
+    // window.location.href = '/auth/microsoft';
+  });
+  document.getElementById('githubBtn').addEventListener('click', () => {
+    console.log('GitHub sign-in clicked');
+    // window.location.href = '/auth/github';
+  });
+</script>
+</body>
+</html>

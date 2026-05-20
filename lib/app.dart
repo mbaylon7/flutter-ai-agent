@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:stt_tts/state/auth_provider.dart';
 import 'package:stt_tts/state/connection_provider.dart';
 import 'package:stt_tts/state/theme_provider.dart';
+import 'package:stt_tts/ui/onboarding/signin_screen.dart';
 import 'package:stt_tts/ui/onboarding/welcome_screen.dart';
 import 'package:stt_tts/ui/shell/home_shell.dart';
 
@@ -77,23 +79,31 @@ class _AppRouter extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final auth = ref.watch(authStateProvider);
     final reconnect = ref.watch(autoReconnectControllerProvider);
     final tokens = ref.watch(tokensProvider);
 
-    return reconnect.when(
-      loading: () => Scaffold(
-        backgroundColor: tokens.bg,
-        body: Center(
-          child: CircularProgressIndicator(color: tokens.accent),
-        ),
-      ),
-      data: (connected) {
-        if (connected) {
-          return const HomeShell();
-        }
-        return const WelcomeScreen();
+    final loading = Scaffold(
+      backgroundColor: tokens.bg,
+      body: Center(child: CircularProgressIndicator(color: tokens.accent)),
+    );
+
+    // 1. Auth state takes precedence — no Firebase user → sign-in screen.
+    return auth.when(
+      loading: () => loading,
+      error: (_, _) => const SignInScreen(),
+      data: (user) {
+        if (user == null) return const SignInScreen();
+
+        // 2. Signed in. Decide between gateway pairing screen and home shell
+        //    based on whether the WS connection has already been restored.
+        return reconnect.when(
+          loading: () => loading,
+          error: (_, _) => const WelcomeScreen(),
+          data: (connected) =>
+              connected ? const HomeShell() : const WelcomeScreen(),
+        );
       },
-      error: (e, _) => const WelcomeScreen(),
     );
   }
 }

@@ -60,6 +60,11 @@ dependencies:
 
   # Slice 1D
   permission_handler: ^11.3.1
+
+  # Firebase auth (firebase-auth branch)
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  google_sign_in: ^6.2.1
   porcupine_flutter: ^3.0.4
 
 dev_dependencies:
