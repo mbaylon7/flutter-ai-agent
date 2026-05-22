@@ -9,6 +9,7 @@ import 'package:stt_tts/domain/repositories/chat_repository.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/state/theme_provider.dart';
+import 'package:stt_tts/state/ui_mode_provider.dart';
 import 'package:uuid/uuid.dart';
 
 /// Minimal chat input rendered at `bottom: 141` (see `OcLayout`).
@@ -37,12 +38,6 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
       if (_text != _controller.text) {
         setState(() => _text = _controller.text);
       }
-    });
-    // Mirror the HTML which focuses the input ~220 ms after mode switch.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Future.delayed(const Duration(milliseconds: 220), () {
-        if (mounted) _focusNode.requestFocus();
-      });
     });
   }
 
@@ -136,6 +131,20 @@ class _ChatComposerState extends ConsumerState<ChatComposer> {
   @override
   Widget build(BuildContext context) {
     final tokens = ref.watch(tokensProvider);
+
+    // Only grab focus (and pop the keyboard) when the user switches into
+    // chat mode. The composer is mounted in voice mode too — with opacity 0 —
+    // and we must not auto-focus it there.
+    ref.listen<UiMode>(uiModeProvider, (prev, next) {
+      if (prev == next) return;
+      if (next == UiMode.chat) {
+        Future.delayed(const Duration(milliseconds: 220), () {
+          if (mounted) _focusNode.requestFocus();
+        });
+      } else {
+        _focusNode.unfocus();
+      }
+    });
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),

@@ -11,7 +11,7 @@ class AboutSection extends StatelessWidget {
         SettingTile(
           icon: Icons.info_outline,
           title: 'Version',
-          subtitle: '1.0.0-slice1',
+          subtitle: '1.0.0',
         ),
         SizedBox(height: 8),
         SettingTile(
