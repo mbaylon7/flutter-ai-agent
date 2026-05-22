@@ -169,22 +169,14 @@ class _WavePainter extends CustomPainter {
   // Path resolution (HTML uses STEPS = 72).
   static const _steps = 72;
 
-  // Horizontal palette (9 stops) lifted directly from the SVG defs.
-  static const _paletteStops = [
-    0.0, 0.14, 0.28, 0.42, 0.54, 0.64, 0.76, 0.88, 1.0,
-  ];
+  // Horizontal palette — cyan → blue → purple only.
+  static const _paletteStops = [0.0, 0.5, 1.0];
 
   // Pre-baked at full opacity; we wrap saveLayer with the layer's alpha.
   static const _paletteRgb = <List<int>>[
-    [150, 70,  240], // purple
-    [220, 100, 230], // magenta
-    [180, 100, 255], // violet
-    [80,  180, 255], // blue
-    [110, 230, 200], // cyan-green
-    [150, 255, 140], // green
-    [255, 220, 100], // yellow
-    [255, 150, 80],  // orange
-    [230, 80,  80],  // red
+    [80,  220, 255], // cyan
+    [110, 140, 255], // blue
+    [170, 90,  240], // purple
   ];
 
   // Mirror fill base opacity.
