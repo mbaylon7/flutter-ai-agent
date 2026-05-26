@@ -27,7 +27,6 @@ class OcTokens {
     required this.micBorderActive,
     required this.micIcon,
     required this.micIconActive,
-    required this.homeIndicator,
     required this.chipBg,
     required this.chipBgHover,
     required this.chipBorder,
@@ -66,8 +65,7 @@ class OcTokens {
   final Color micIcon;
   final Color micIconActive;
 
-  // ─── Home indicator / chips ──────────────────────────────────────
-  final Color homeIndicator;
+  // ─── Chips ───────────────────────────────────────────────────────
   final Color chipBg;
   final Color chipBgHover;
   final Color chipBorder;
@@ -104,7 +102,6 @@ class OcTokens {
     micBorderActive: Color.fromRGBO(255, 255, 255, 0.4),
     micIcon: Color.fromRGBO(255, 255, 255, 0.9),
     micIconActive: Color.fromRGBO(255, 255, 255, 1.0),
-    homeIndicator: Color.fromRGBO(255, 255, 255, 0.35),
     chipBg: Color.fromRGBO(255, 255, 255, 0.06),
     chipBgHover: Color.fromRGBO(255, 255, 255, 0.12),
     chipBorder: Color.fromRGBO(255, 255, 255, 0.12),
@@ -135,7 +132,6 @@ class OcTokens {
     micBorderActive: Color.fromRGBO(0, 0, 0, 0.32),
     micIcon: Color.fromRGBO(0, 0, 0, 0.7),
     micIconActive: Color.fromRGBO(0, 0, 0, 0.92),
-    homeIndicator: Color.fromRGBO(0, 0, 0, 0.3),
     chipBg: Color.fromRGBO(0, 0, 0, 0.04),
     chipBgHover: Color.fromRGBO(0, 0, 0, 0.09),
     chipBorder: Color.fromRGBO(0, 0, 0, 0.10),
@@ -173,11 +169,6 @@ class OcLayout {
 
   /// Toast pinned distance from the bottom.
   static const double toastBottom = 119;
-
-  /// Home indicator pinned distance + size.
-  static const double homeIndicatorBottom = 8;
-  static const double homeIndicatorWidth = 134;
-  static const double homeIndicatorHeight = 5;
 
   /// Chat stage: top inset (from safe area) and bottom inset.
   ///

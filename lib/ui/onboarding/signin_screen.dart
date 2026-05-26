@@ -135,39 +135,36 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
           ),
 
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
-              child: Column(
-                children: [
-                  const SizedBox(height: 36),
+            child: LayoutBuilder(
+              builder: (context, constraints) => SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight - 60),
+                  child: IntrinsicHeight(
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 36),
 
-                  // Logo
+                  // Logo — inverts with theme (dark mode: white bg/black icon;
+                  // light mode: black bg/white icon)
                   Container(
                     width: 56,
                     height: 56,
                     decoration: BoxDecoration(
+                      color: isDark ? Colors.white : Colors.black,
                       borderRadius: BorderRadius.circular(16),
-                      gradient: const LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          Color(0xFF6EAAFF),
-                          Color(0xFFB464FF),
-                          Color(0xFFFF6E96),
-                        ],
-                        stops: [0.0, 0.6, 1.0],
-                      ),
-                      boxShadow: const [
+                      boxShadow: [
                         BoxShadow(
-                          color: Color(0x406EAAFF),
+                          color: (isDark ? Colors.white : Colors.black)
+                              .withValues(alpha: 0.25),
                           blurRadius: 24,
-                          offset: Offset(0, 8),
+                          offset: const Offset(0, 8),
                         ),
                       ],
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.bolt_rounded,
-                      color: Colors.white,
+                      color: isDark ? Colors.black : Colors.white,
                       size: 28,
                     ),
                   ),
@@ -321,8 +318,11 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     ],
                   ),
 
-                  const Spacer(),
-                ],
+                        const Spacer(),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

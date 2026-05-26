@@ -23,7 +23,6 @@ import 'package:uuid/uuid.dart';
 /// * Chat-mode minimal input pinned at `bottom: 141`.
 /// * Controls row pinned at `bottom: 35` (drawer / mic / settings).
 /// * Toast pinned at `bottom: 132` (managed by [showModeToast]).
-/// * Home indicator pinned at `bottom: 8`.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -47,6 +46,9 @@ class _HomeShellState extends ConsumerState<HomeShell> {
     final tokens = ref.watch(tokensProvider);
     final mode = ref.watch(uiModeProvider);
     final sessionKey = ref.watch(currentSessionProvider);
+    // Edge-to-edge means the controls would render under the gesture/nav bar.
+    // Add the system bottom inset to every bottom-pinned widget.
+    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
 
     if (mode == UiMode.voice && sessionKey == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -103,7 +105,7 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           Positioned(
             left: 0,
             right: 0,
-            bottom: OcLayout.chatInputBottom,
+            bottom: OcLayout.chatInputBottom + safeBottom,
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 220),
               opacity: mode == UiMode.chat ? 1 : 0,
@@ -118,25 +120,8 @@ class _HomeShellState extends ConsumerState<HomeShell> {
           Positioned(
             left: 0,
             right: 0,
-            bottom: OcLayout.controlsBottom,
+            bottom: OcLayout.controlsBottom + safeBottom,
             child: _Controls(mode: mode),
-          ),
-
-          // Home indicator — bottom 8, 134x5 pill.
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: OcLayout.homeIndicatorBottom,
-            child: Center(
-              child: Container(
-                width: OcLayout.homeIndicatorWidth,
-                height: OcLayout.homeIndicatorHeight,
-                decoration: BoxDecoration(
-                  color: tokens.homeIndicator,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-            ),
           ),
         ],
       ),
