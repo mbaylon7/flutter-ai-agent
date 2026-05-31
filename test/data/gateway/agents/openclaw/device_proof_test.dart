@@ -13,7 +13,7 @@ void main() {
       clientMode: 'webchat',
       role: 'operator',
       scopes: const ['operator.admin'],
-      token: 'test-123',
+      token: 'dummy-fixture-token',
       nonce: 'NONCE',
       now: DateTime.fromMillisecondsSinceEpoch(1700000000000),
     );

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/state/auth_provider.dart';
-import 'package:stt_tts/state/connection_provider.dart';
+import 'package:stt_tts/state/onboarding_provider.dart';
 import 'package:stt_tts/state/theme_provider.dart';
+import 'package:stt_tts/ui/onboarding/onboarding_screen.dart';
 import 'package:stt_tts/ui/onboarding/signin_screen.dart';
-import 'package:stt_tts/ui/onboarding/welcome_screen.dart';
 import 'package:stt_tts/ui/shell/home_shell.dart';
 
 class OpenClawApp extends ConsumerStatefulWidget {
@@ -80,7 +80,6 @@ class _AppRouter extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auth = ref.watch(authStateProvider);
-    final reconnect = ref.watch(autoReconnectControllerProvider);
     final tokens = ref.watch(tokensProvider);
 
     final loading = Scaffold(
@@ -95,13 +94,16 @@ class _AppRouter extends ConsumerWidget {
       data: (user) {
         if (user == null) return const SignInScreen();
 
-        // 2. Signed in. Decide between gateway pairing screen and home shell
-        //    based on whether the WS connection has already been restored.
-        return reconnect.when(
+        // 2. Signed in. Show onboarding once per user, then the home shell.
+        //    Agent reconnect runs silently in the background — the router
+        //    no longer waits for it; the home shell is fully usable without
+        //    an agent connection.
+        final onboarded = ref.watch(onboardingDoneProvider);
+        return onboarded.when(
           loading: () => loading,
-          error: (_, _) => const WelcomeScreen(),
-          data: (connected) =>
-              connected ? const HomeShell() : const WelcomeScreen(),
+          error: (_, _) => const OnboardingScreen(),
+          data: (done) =>
+              done ? const HomeShell() : const OnboardingScreen(),
         );
       },
     );

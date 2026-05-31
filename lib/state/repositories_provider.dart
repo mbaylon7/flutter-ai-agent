@@ -24,7 +24,10 @@ final sessionRepositoryProvider = Provider<SessionRepository>(
 );
 
 final chatRepositoryProvider = Provider<ChatRepository>((ref) {
-  final repo = ChatRepository(ref.watch(gatewayClientProvider));
+  final repo = ChatRepository(
+    ref.watch(gatewayClientProvider),
+    isAgentConnected: () => ref.read(isAgentConnectedProvider),
+  );
   ref.onDispose(repo.dispose);
   return repo;
 });

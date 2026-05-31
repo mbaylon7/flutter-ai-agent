@@ -17,7 +17,7 @@ void main() {
         'operator.pairing',
       ],
       signedAtMs: 1777443641132,
-      token: 'test-123',
+      token: 'dummy-fixture-token',
       nonce: '4aafea19-095b-40e6-bd18-7d0739ee6c34',
     );
     expect(
@@ -25,7 +25,7 @@ void main() {
       'v2|759fe82249316fdc36e3f306ebacfe54b2e33e4a2a73772911c33c570cbc9934'
       '|openclaw-control-ui|webchat|operator'
       '|operator.admin,operator.read,operator.write,operator.approvals,operator.pairing'
-      '|1777443641132|test-123|4aafea19-095b-40e6-bd18-7d0739ee6c34',
+      '|1777443641132|dummy-fixture-token|4aafea19-095b-40e6-bd18-7d0739ee6c34',
     );
   });
 

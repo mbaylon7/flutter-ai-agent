@@ -1,41 +1,33 @@
 {
   "project_info": {
-    "project_number": "779328092250",
-    "project_id": "ai-agent-d669e",
-    "storage_bucket": "ai-agent-d669e.firebasestorage.app"
+    "project_number": "917608758814",
+    "project_id": "ai-voice-app-5363b",
+    "storage_bucket": "ai-voice-app-5363b.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:779328092250:android:ae55ade4b37b569afe4063",
+        "mobilesdk_app_id": "1:917608758814:android:e234a13ecde3289e48380f",
         "android_client_info": {
           "package_name": "com.example.stt_tts"
         }
       },
       "oauth_client": [
         {
-          "client_id": "779328092250-j0bderdi5hakhj7j05fdot8v09s46pai.apps.googleusercontent.com",
-          "client_type": 1,
-          "android_info": {
-            "package_name": "com.example.stt_tts",
-            "certificate_hash": "34306154b6f7634230c97c86280c443bdc7195f9"
-          }
-        },
-        {
-          "client_id": "779328092250-nb7cpuu7ls3o898bo12i49rp8ob3t3ij.apps.googleusercontent.com",
+          "client_id": "917608758814-dhpforba6pjjl2d7ud67qt398r3o5c6u.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyDKy6cPqt4VpiFWN6VVfxCwwsSDHzaHidc"
+          "current_key": "AIzaSyDw1EgOnsbQ-kSmNg-lUq2R7sqRGbtXBUY"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "779328092250-nb7cpuu7ls3o898bo12i49rp8ob3t3ij.apps.googleusercontent.com",
+              "client_id": "917608758814-dhpforba6pjjl2d7ud67qt398r3o5c6u.apps.googleusercontent.com",
               "client_type": 3
             }
           ]

@@ -15,11 +15,16 @@ import 'package:stt_tts/data/secure/secure_store.dart';
 void main() {
   final integration = Platform.environment['OPENCLAW_INTEGRATION'] == '1';
   final url = Platform.environment['OPENCLAW_URL'] ?? 'ws://127.0.0.1:18789/';
-  final token = Platform.environment['OPENCLAW_TOKEN'] ?? 'test-123';
+  final token = Platform.environment['OPENCLAW_TOKEN'];
 
   test(
     'sessions.list against live gateway — what conversations exist?',
     () async {
+      final t = token;
+      if (t == null || t.isEmpty) {
+        markTestSkipped('Set OPENCLAW_TOKEN to run this integration test.');
+        return;
+      }
       final identityMgr = DeviceIdentityManager(store: FakeSecureStore());
       final identity = await identityMgr.loadOrCreate();
 
@@ -40,14 +45,14 @@ void main() {
         clientMode: 'webchat',
         role: 'operator',
         scopes: openClawScopes,
-        token: token,
+        token: t,
         nonce: nonce,
       );
       final params = buildConnectParams(
         instanceId: newInstanceId(),
         appVersion: '0.0.1',
         deviceProof: proof,
-        token: token,
+        token: t,
         deviceToken: null,
         userAgent: 'oc-probe/0.1',
         locale: 'en-US',

@@ -32,12 +32,19 @@ import 'package:stt_tts/domain/models/message.dart';
 /// - **ChatFailed**: set `streaming: failed`; append
 ///   `TextPart('(failed: $reason)')`.
 class ChatRepository {
-  ChatRepository(this._gw) {
+  ChatRepository(this._gw, {bool Function()? isAgentConnected})
+      : _isAgentConnected = isAgentConnected ?? _alwaysConnected {
     // Subscribe once in the constructor; route by sessionKey.
     _chatSub = _gw.watchChat().listen(_handleEvent);
   }
 
+  static bool _alwaysConnected() => true;
+
   final GatewayClient _gw;
+
+  /// Returns `true` when an agent gateway is live. When `false`, [send] does
+  /// not contact the gateway and inserts a local "please connect" reply.
+  final bool Function() _isAgentConnected;
 
   /// `sessionKey` → current message list.
   final Map<String, List<Message>> _messages = {};
@@ -86,6 +93,13 @@ class ChatRepository {
   /// Idempotent — subsequent calls re-fetch.
   Future<void> loadHistory(String sessionKey) async {
     final history = await _gw.loadHistory(sessionKey);
+    // An empty result must never clobber locally-held messages. For a brand-new
+    // or offline session the gateway returns [] — but `send()`/`_localOfflineReply`
+    // may have already inserted the turn the user just spoke. `messagesProvider`
+    // fires this load on every session, and a stale socket can resolve it *after*
+    // the turn is committed, so an unconditional replace makes the message show
+    // then vanish. Only adopt the gateway's view when it actually has history.
+    if (history.isEmpty && _listFor(sessionKey).isNotEmpty) return;
     _setList(sessionKey, history);
   }
 
@@ -100,6 +114,14 @@ class ChatRepository {
     required String text,
   }) async {
     final now = DateTime.now();
+
+    // No live gateway → don't reach the network. Insert the user message
+    // followed by a local "please connect" reply so STT/chat still feel
+    // responsive. AI generation comes back online once the user connects
+    // an agent from Settings.
+    if (!_isAgentConnected()) {
+      return _localOfflineReply(sessionKey, text, now);
+    }
 
     // Auto-title the session from the first user message (gateway has no
     // server-side titling, so without this every session shows "Untitled").
@@ -186,6 +208,31 @@ class ChatRepository {
       ..add(userMsg)
       ..add(assistantMsg);
     _setList(sessionKey, current);
+  }
+
+  /// Inserts a user message + a finalized assistant reply asking the user to
+  /// connect an agent. No gateway call. Used when the app is signed in but
+  /// not paired with any gateway.
+  ChatRun _localOfflineReply(String sessionKey, String text, DateTime now) {
+    final userMsg = Message(
+      role: Role.user,
+      parts: [TextPart(text)],
+      createdAt: now,
+      streaming: StreamingState.finalized,
+    );
+    final runId = newRequestId();
+    final reply = Message(
+      role: Role.assistant,
+      parts: const [TextPart('Please connect to your agent')],
+      createdAt: now.add(const Duration(milliseconds: 1)),
+      runId: runId,
+      streaming: StreamingState.finalized,
+    );
+    final current = List<Message>.of(_listFor(sessionKey))
+      ..add(userMsg)
+      ..add(reply);
+    _setList(sessionKey, current);
+    return ChatRun(runId: runId, sessionKey: sessionKey);
   }
 
   /// Abort an in-flight run.

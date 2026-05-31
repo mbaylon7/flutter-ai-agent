@@ -9,16 +9,14 @@ import 'package:stt_tts/domain/models/message.dart';
 import 'package:stt_tts/domain/models/session.dart';
 import 'package:stt_tts/state/connection_provider.dart';
 
-// ---------------------------------------------------------------------------
-// Fake GatewayClient for auto-reconnect tests.
-// ---------------------------------------------------------------------------
-
 class _FakeGatewayClient implements GatewayClient {
   bool shouldThrow = false;
   HelloResult? connectResult;
+  ConnectionConfig? lastConnect;
 
   @override
   Future<HelloResult> connect(ConnectionConfig config) async {
+    lastConnect = config;
     if (shouldThrow) throw Exception('connection refused');
     return connectResult ??
         const HelloResult(deviceToken: 'new-dt', role: 'user', scopes: []);
@@ -65,25 +63,19 @@ class _FakeGatewayClient implements GatewayClient {
   Future<void> abort(String runId) async {}
 }
 
-// Pump microtasks until the condition is met or a max iteration count is hit.
-Future<void> _settle(ProviderContainer container, StateNotifierProvider<AutoReconnectController, AsyncValue<bool>> provider) async {
-  for (var i = 0; i < 20; i++) {
+Future<void> _settle(
+  ProviderContainer container,
+  bool Function(AgentConnection s) until,
+) async {
+  for (var i = 0; i < 40; i++) {
     await Future<void>.delayed(Duration.zero);
-    final s = container.read(provider);
-    if (!s.isLoading) return;
+    if (until(container.read(agentConnectionControllerProvider))) return;
   }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 void main() {
-  // -------------------------------------------------------------------------
-  // Test 1: No deviceToken → state becomes AsyncValue.data(false).
-  // -------------------------------------------------------------------------
-  test('No deviceToken → state becomes data(false)', () async {
-    final secure = FakeSecureStore(); // empty — no stored tokens
+  test('no stored creds → stays disconnected', () async {
+    final secure = FakeSecureStore();
     final gw = _FakeGatewayClient();
 
     final container = ProviderContainer(
@@ -93,21 +85,18 @@ void main() {
       ],
     );
 
-    // Read the provider to initialise it, then wait for async to settle.
-    container.read(autoReconnectControllerProvider);
-    await _settle(container, autoReconnectControllerProvider);
+    container.read(agentConnectionControllerProvider);
+    // No work to do — stored creds are absent, so the controller short-circuits.
+    await Future<void>.delayed(Duration.zero);
 
-    final state = container.read(autoReconnectControllerProvider);
+    final state = container.read(agentConnectionControllerProvider);
     container.dispose();
 
-    expect(state, const AsyncValue<bool>.data(false));
+    expect(state.status, AgentConnectionStatus.disconnected);
+    expect(gw.lastConnect, isNull);
   });
 
-  // -------------------------------------------------------------------------
-  // Test 2: deviceToken present + gateway connect succeeds → data(true).
-  // -------------------------------------------------------------------------
-  test('deviceToken present + connect succeeds → state becomes data(true)',
-      () async {
+  test('stored deviceToken + connect succeeds → connected', () async {
     final secure = FakeSecureStore();
     await secure.write('oc.deviceToken', 'stored-device-token');
     await secure.write('oc.wsUrl', 'ws://localhost:18789/');
@@ -121,12 +110,101 @@ void main() {
       ],
     );
 
-    container.read(autoReconnectControllerProvider);
-    await _settle(container, autoReconnectControllerProvider);
+    container.read(agentConnectionControllerProvider);
+    await _settle(
+      container,
+      (s) => s.status != AgentConnectionStatus.connecting,
+    );
 
-    final state = container.read(autoReconnectControllerProvider);
+    final state = container.read(agentConnectionControllerProvider);
     container.dispose();
 
-    expect(state, const AsyncValue<bool>.data(true));
+    expect(state.status, AgentConnectionStatus.connected);
+    expect(state.wsUrl, 'ws://localhost:18789/');
+    expect(gw.lastConnect?.deviceToken, 'stored-device-token');
+  });
+
+  test('connect() with form inputs persists deviceToken', () async {
+    final secure = FakeSecureStore();
+    final gw = _FakeGatewayClient();
+
+    final container = ProviderContainer(
+      overrides: [
+        secureStoreProvider.overrideWithValue(secure),
+        gatewayClientProvider.overrideWithValue(gw),
+      ],
+    );
+
+    final controller =
+        container.read(agentConnectionControllerProvider.notifier);
+    await controller.connect(
+      url: '10.0.2.2',
+      port: 18789,
+      token: 'bootstrap-token',
+    );
+
+    final state = container.read(agentConnectionControllerProvider);
+    expect(state.status, AgentConnectionStatus.connected);
+    expect(state.wsUrl, 'ws://10.0.2.2:18789/');
+    expect(await secure.read('oc.deviceToken'), 'new-dt');
+    expect(await secure.read('oc.wsUrl'), 'ws://10.0.2.2:18789/');
+    expect(gw.lastConnect?.token, 'bootstrap-token');
+    container.dispose();
+  });
+
+  test('connect() failure surfaces friendly error', () async {
+    final secure = FakeSecureStore();
+    final gw = _FakeGatewayClient()..shouldThrow = true;
+
+    final container = ProviderContainer(
+      overrides: [
+        secureStoreProvider.overrideWithValue(secure),
+        gatewayClientProvider.overrideWithValue(gw),
+      ],
+    );
+
+    final controller =
+        container.read(agentConnectionControllerProvider.notifier);
+    await controller.connect(
+      url: 'agent.example.com',
+      port: 18789,
+      token: 'tok',
+    );
+
+    final state = container.read(agentConnectionControllerProvider);
+    expect(state.status, AgentConnectionStatus.failed);
+    expect(state.error, isNotNull);
+    expect(state.error, isNot(contains('Exception')));
+    container.dispose();
+  });
+
+  test('disconnect() clears persisted credentials', () async {
+    final secure = FakeSecureStore();
+    await secure.write('oc.deviceToken', 'stored-device-token');
+    await secure.write('oc.wsUrl', 'ws://localhost:18789/');
+    final gw = _FakeGatewayClient();
+
+    final container = ProviderContainer(
+      overrides: [
+        secureStoreProvider.overrideWithValue(secure),
+        gatewayClientProvider.overrideWithValue(gw),
+      ],
+    );
+
+    final controller =
+        container.read(agentConnectionControllerProvider.notifier);
+    await _settle(
+      container,
+      (s) => s.status != AgentConnectionStatus.connecting,
+    );
+
+    await controller.disconnect();
+    expect(await secure.read('oc.deviceToken'), isNull);
+    expect(await secure.read('oc.wsUrl'), isNull);
+    expect(
+      container.read(agentConnectionControllerProvider).status,
+      AgentConnectionStatus.disconnected,
+    );
+    container.dispose();
   });
 }

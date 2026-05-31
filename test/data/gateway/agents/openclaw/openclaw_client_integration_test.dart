@@ -12,16 +12,21 @@ import 'package:stt_tts/data/secure/secure_store.dart';
 void main() {
   final integration = Platform.environment['OPENCLAW_INTEGRATION'] == '1';
   final url = Platform.environment['OPENCLAW_URL'] ?? 'ws://127.0.0.1:18789/';
-  final token = Platform.environment['OPENCLAW_TOKEN'] ?? 'test-123';
+  final token = Platform.environment['OPENCLAW_TOKEN'];
 
   test(
     'connect to a running gateway, receive Hello with deviceToken',
     () async {
+      final t = token;
+      if (t == null || t.isEmpty) {
+        markTestSkipped('Set OPENCLAW_TOKEN to run this integration test.');
+        return;
+      }
       final client = OpenClawGatewayClient(
         identityManager: DeviceIdentityManager(store: FakeSecureStore()),
       );
       final hello = await client.connect(
-        ConnectionConfig(wsUrl: url, token: token),
+        ConnectionConfig(wsUrl: url, token: t),
       );
       expect(hello.role, isNotEmpty);
       // deviceToken may or may not be returned depending on gateway version

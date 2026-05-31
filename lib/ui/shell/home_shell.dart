@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/design_tokens.dart';
+import 'package:stt_tts/state/connection_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/state/theme_provider.dart';
 import 'package:stt_tts/state/ui_mode_provider.dart';
@@ -12,6 +13,7 @@ import 'package:stt_tts/ui/chat/chat_composer.dart';
 import 'package:stt_tts/ui/sessions/sessions_drawer.dart';
 import 'package:stt_tts/ui/settings/settings_screen.dart';
 import 'package:stt_tts/ui/speech/voice_home.dart';
+import 'package:stt_tts/ui/widgets/agent_required_notice.dart';
 import 'package:stt_tts/ui/widgets/mode_toast.dart';
 import 'package:uuid/uuid.dart';
 
@@ -32,6 +34,11 @@ class HomeShell extends ConsumerStatefulWidget {
 
 class _HomeShellState extends ConsumerState<HomeShell> {
   bool _initialModeApplied = false;
+
+  /// Whether the "no agent connected" launch notice has fired this app session.
+  /// Static so it survives HomeShell remounts (e.g. the router re-rendering) —
+  /// the user only needs the early nudge once per launch.
+  static bool _agentNoticeShown = false;
 
   String _ensureSession() {
     final key = ref.read(currentSessionProvider);
@@ -68,6 +75,19 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         if (ref.read(uiModeProvider) == UiMode.voice) {
           unawaited(session.startListening());
         }
+        // Early "no agent" awareness: give the silent reconnect a moment to
+        // resolve, then nudge the user to connect if there's still no agent.
+        // Fires once per app session (static guard) and is themed for
+        // black/white via [showAgentRequiredNotice].
+        if (!_agentNoticeShown) {
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (_agentNoticeShown || !context.mounted) return;
+            if (!ref.read(isAgentConnectedProvider)) {
+              _agentNoticeShown = true;
+              showAgentRequiredNotice(context, ref);
+            }
+          });
+        }
       });
     }
 
@@ -87,6 +107,21 @@ class _HomeShellState extends ConsumerState<HomeShell> {
         FocusManager.instance.primaryFocus?.unfocus();
         unawaited(session.startListening());
         showModeToast(context, 'Voice mode');
+      }
+    });
+
+    // React to session changes (new chat / switching conversations). Only the
+    // first-frame setup and mode toggles called startListening() before, so a
+    // freshly-created conversation never opened the mic — leaving the wave
+    // visualizer idle (no mic level → it sits in its flat "calm" state, which
+    // reads as "the animation is missing"). Bind AI playback for the new
+    // session and, in voice mode, start listening so the wave comes alive.
+    ref.listen<String?>(currentSessionProvider, (prev, next) {
+      if (next == null || next == prev) return;
+      final session = ref.read(voiceSessionProvider(next));
+      session.enable();
+      if (ref.read(uiModeProvider) == UiMode.voice) {
+        unawaited(session.startListening());
       }
     });
 

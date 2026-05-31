@@ -4,7 +4,6 @@ import 'package:stt_tts/state/connection_provider.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/state/theme_provider.dart';
-import 'package:stt_tts/ui/onboarding/welcome_screen.dart';
 import 'package:stt_tts/ui/settings/setting_tile.dart';
 
 class PrivacySection extends ConsumerWidget {
@@ -74,7 +73,7 @@ class PrivacySection extends ConsumerWidget {
                   style: TextStyle(color: tokens.text, fontSize: 16),
                 ),
                 content: Text(
-                  'You will need to pair again with the gateway URL and token.',
+                  'You will need to pair again with the gateway URL, port, and token.',
                   style: TextStyle(color: tokens.textMuted, fontSize: 13),
                 ),
                 actions: [
@@ -92,13 +91,12 @@ class PrivacySection extends ConsumerWidget {
               ),
             );
             if (ok == true) {
-              final store = ref.read(secureStoreProvider);
-              await store.delete('oc.deviceToken');
-              await store.delete('oc.wsUrl');
+              await ref
+                  .read(agentConnectionControllerProvider.notifier)
+                  .disconnect();
               if (context.mounted) {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-                  (_) => false,
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Device unpaired')),
                 );
               }
             }

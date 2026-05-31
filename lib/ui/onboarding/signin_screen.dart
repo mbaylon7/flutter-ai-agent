@@ -188,7 +188,10 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 64),
+                  // Flexible gap — pushes the form toward the vertical centre
+                  // on tall screens (design uses a fixed 130px here; a flex
+                  // gap adapts to device height instead of leaving dead space).
+                  const Spacer(flex: 3),
 
                   // Email
                   _OcAuthField(
@@ -318,7 +321,10 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
                     ],
                   ),
 
-                        const Spacer(),
+                        // Smaller bottom slack so the OAuth row settles into
+                        // the lower third rather than mid-screen — balances
+                        // against the larger flex gap above the form.
+                        const Spacer(flex: 2),
                       ],
                     ),
                   ),

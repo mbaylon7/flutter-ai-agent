@@ -2,12 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/core/design_tokens.dart';
 import 'package:stt_tts/domain/models/session.dart';
+import 'package:stt_tts/state/connection_provider.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
 import 'package:stt_tts/state/theme_provider.dart';
 import 'package:stt_tts/ui/sessions/session_actions_sheet.dart';
 import 'package:stt_tts/ui/sessions/session_row.dart';
 import 'package:stt_tts/ui/sessions/session_search_bar.dart';
 import 'package:stt_tts/ui/settings/settings_screen.dart';
+import 'package:stt_tts/ui/widgets/agent_required_notice.dart';
 
 /// Sessions drawer — themed via [OcTokens]. Layout mirrors the HTML
 /// `.drawer-sheet`: dark `--drawer-bg` in dark mode, light in light mode,
@@ -37,6 +39,16 @@ class SessionsDrawer extends ConsumerWidget {
           ),
           _NewChatRow(
             onTap: () {
+              if (!ref.read(isAgentConnectedProvider)) {
+                // No agent → a new chat is meaningless. Don't touch
+                // currentSessionProvider, so the existing conversation stays
+                // on screen; just nudge the user to connect (themed notice),
+                // then return to the home screen.
+                showAgentRequiredNotice(context, ref);
+                Navigator.of(context).maybePop();
+                return;
+              }
+              // Connected → start a fresh conversation.
               ref.read(currentSessionProvider.notifier).state = null;
               Navigator.of(context).maybePop();
             },

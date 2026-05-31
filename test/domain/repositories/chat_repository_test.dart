@@ -363,4 +363,34 @@ void main() {
     expect(failText, startsWith('(send failed:'));
     expect(failText, contains('network error'));
   });
+
+  // -------------------------------------------------------------------------
+  // 10. Empty history load must not clobber locally-held messages
+  //
+  // Repro for the "spoken turn shows then disappears in a new conversation"
+  // bug: messagesProvider fires loadHistory() on every session; for a brand-
+  // new / offline session the gateway returns []. If that empty result is
+  // allowed to replace the in-memory list, the turn the user just committed
+  // (via send → _localOfflineReply) is wiped a moment after it appears.
+  // -------------------------------------------------------------------------
+
+  test('loadHistory: empty gateway history does not wipe local messages',
+      () async {
+    gw.nextRunId = 'run-local';
+    gw.nextSessionKey = 's1';
+
+    // A turn already exists locally (optimistic / offline insert).
+    await repo.send(sessionKey: 's1', text: 'spoken turn');
+    expect(await repo.messages('s1').first, hasLength(2));
+
+    // Gateway returns no history (new session, or a stale socket that resolves
+    // to [] after the user already spoke). This must NOT erase the local turn.
+    gw.historyResult = [];
+    await repo.loadHistory('s1');
+
+    final list = await repo.messages('s1').first;
+    expect(list, hasLength(2),
+        reason: 'empty history load wiped locally-held messages');
+    expect((list[0].parts.first as TextPart).text, 'spoken turn');
+  });
 }

@@ -5,19 +5,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:stt_tts/app.dart';
+import 'package:stt_tts/core/trusted_hosts.dart';
 import 'package:stt_tts/data/cache/local_store.dart';
 import 'package:stt_tts/firebase_options.dart';
 import 'package:stt_tts/state/repositories_provider.dart';
 
 class _OpenClawHttpOverrides extends HttpOverrides {
-  static const _trustedHosts = {'178.104.222.39'};
-
   @override
   HttpClient createHttpClient(SecurityContext? context) {
     return super.createHttpClient(context)
+      // Accept a self-signed cert ONLY for the agent host the user paired with.
+      // The connect flow registers that host into [TrustedHosts]; nothing is
+      // hardcoded. A CA-signed host never reaches this callback at all.
       ..badCertificateCallback =
           (X509Certificate cert, String host, int port) =>
-              _trustedHosts.contains(host);
+              TrustedHosts.isAllowed(host);
   }
 }
 
