@@ -34,8 +34,11 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  speech_to_text: ^7.3.0
-  flutter_tts: ^4.2.3
+
+  # Voice (Phase 1: Sherpa-ONNX on-device STT + TTS, no Google services)
+  sherpa_onnx: ^1.13.2
+  record: ^6.2.0
+  audioplayers: ^6.1.0
 
   # Slice 1A
   flutter_riverpod: ^2.5.1
@@ -57,6 +60,11 @@ dependencies:
 
   # Slice 1D
   permission_handler: ^11.3.1
+
+  # Firebase auth (firebase-auth branch)
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  google_sign_in: ^6.2.1
   porcupine_flutter: ^3.0.4
 
 dev_dependencies:
@@ -82,32 +90,55 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
+  # Assets are listed individually because Flutter does not recurse into
+  # subdirectories. The Sherpa Piper TTS espeak-ng-data has many language
+  # subfolders that all need to be bundled.
   assets:
     - assets/wake-words/
+    # Sherpa STT (streaming zipformer, kroko 2025-08-06)
+    - assets/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06/
+    # Sherpa TTS (Piper VITS libritts_r)
+    - assets/models/vits-piper-en_US-libritts_r-medium/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/voices/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/voices/!v/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/aav/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/art/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/azc/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/bat/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/bnt/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/ccs/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/cel/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/cus/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/dra/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/esx/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/gmq/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/gmw/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/grk/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/inc/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/ine/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/ira/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/iro/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/itc/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/jpx/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/map/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/miz/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/myn/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/poz/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/roa/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/sai/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/sem/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/sit/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/tai/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/trk/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/urj/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/zle/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/zls/
+    - assets/models/vits-piper-en_US-libritts_r-medium/espeak-ng-data/lang/zlw/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 
   # For details regarding adding assets from package dependencies, see
   # https://flutter.dev/to/asset-from-package
-
-  # To add custom fonts to your application, add a fonts section here,
-  # in this "flutter" section. Each entry in this list should have a
-  # "family" key with the font family name, and a "fonts" key with a
-  # list giving the asset and other descriptors for the font. For
-  # example:
-  # fonts:
-  #   - family: Schyler
-  #     fonts:
-  #       - asset: fonts/Schyler-Regular.ttf
-  #       - asset: fonts/Schyler-Italic.ttf
-  #         style: italic
-  #   - family: Trajan Pro
-  #     fonts:
-  #       - asset: fonts/TrajanPro.ttf
-  #       - asset: fonts/TrajanPro_Bold.ttf
-  #         weight: 700
-  #
-  # For details regarding fonts from package dependencies,
-  # see https://flutter.dev/to/font-from-package

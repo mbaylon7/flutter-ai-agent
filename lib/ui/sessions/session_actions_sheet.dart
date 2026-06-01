@@ -116,18 +116,21 @@ class SessionActionsSheet extends ConsumerWidget {
           'Rename conversation',
           style: TextStyle(color: OcColors.textPrimary),
         ),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          style: const TextStyle(color: OcColors.textPrimary),
-          decoration: const InputDecoration(
-            hintText: 'Conversation name',
-            hintStyle: TextStyle(color: OcColors.textMeta),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: OcColors.borderTint),
-            ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: OcColors.accent),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: textController,
+            autofocus: true,
+            style: const TextStyle(color: OcColors.textPrimary),
+            decoration: const InputDecoration(
+              hintText: 'Conversation name',
+              hintStyle: TextStyle(color: OcColors.textMeta),
+              enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: OcColors.borderTint),
+              ),
+              focusedBorder: UnderlineInputBorder(
+                borderSide: BorderSide(color: OcColors.accent),
+              ),
             ),
           ),
         ),

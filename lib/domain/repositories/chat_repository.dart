@@ -101,6 +101,10 @@ class ChatRepository {
   }) async {
     final now = DateTime.now();
 
+    // Auto-title the session from the first user message (gateway has no
+    // server-side titling, so without this every session shows "Untitled").
+    final isFirstMessage = _listFor(sessionKey).isEmpty;
+
     // 1. User message (immediately finalized).
     final userMsg = Message(
       role: Role.user,
@@ -137,6 +141,10 @@ class ChatRepository {
       // 6. Update the placeholder with the real runId.
       _updatePlaceholderRunId(sessionKey, run.runId);
 
+      if (isFirstMessage) {
+        await _autoTitleSession(sessionKey, text);
+      }
+
       return run;
     } catch (e) {
       // Mark the placeholder as failed, then rethrow so callers can detect
@@ -152,8 +160,59 @@ class ChatRepository {
     }
   }
 
+  /// Phase 1 / sandbox echo path. Inserts a user message and a finalized
+  /// assistant message with the same text — no gateway call, no LLM. Used
+  /// while we validate the on-device STT/TTS pipeline before wiring the
+  /// real AI flow back in.
+  Future<void> sendEcho({
+    required String sessionKey,
+    required String text,
+  }) async {
+    final now = DateTime.now();
+    final userMsg = Message(
+      role: Role.user,
+      parts: [TextPart(text)],
+      createdAt: now,
+      streaming: StreamingState.finalized,
+    );
+    final assistantMsg = Message(
+      role: Role.assistant,
+      parts: [TextPart(text)],
+      createdAt: now.add(const Duration(milliseconds: 1)),
+      runId: newRequestId(),
+      streaming: StreamingState.finalized,
+    );
+    final current = List<Message>.of(_listFor(sessionKey))
+      ..add(userMsg)
+      ..add(assistantMsg);
+    _setList(sessionKey, current);
+  }
+
   /// Abort an in-flight run.
   Future<void> abort(String runId) => _gw.abort(runId);
+
+  Future<void> _autoTitleSession(String sessionKey, String firstMessage) async {
+    final title = deriveTitle(firstMessage);
+    if (title.isEmpty) return;
+    try {
+      await _gw.patchSession(sessionKey, title: title);
+    } catch (_) {
+      // Best-effort — failures fall back to whatever the gateway emits.
+    }
+  }
+
+  /// Derive a short title for a session from the user's first message.
+  /// Public so the chat composer can use the same logic for optimistic upsert.
+  static String deriveTitle(String text) {
+    final cleaned = text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (cleaned.isEmpty) return '';
+    const maxLen = 48;
+    if (cleaned.length <= maxLen) return cleaned;
+    final cut = cleaned.substring(0, maxLen);
+    final lastSpace = cut.lastIndexOf(' ');
+    final trimmed = lastSpace > 16 ? cut.substring(0, lastSpace) : cut;
+    return '$trimmed…';
+  }
 
   /// Release all resources. Idempotent.
   Future<void> dispose() async {

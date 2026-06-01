@@ -75,8 +75,20 @@ class SessionsController extends Notifier<SessionsState> {
     ref.onDispose(
       repo.watchUpdates().listen((s) {
         final list = state.sessions.valueOrNull ?? const <Session>[];
-        // Upsert by key, then re-sort by canonical order (pinned-first, updatedAt DESC).
-        final next = [...list.where((x) => x.key != s.key), s]
+        // Late events from the gateway may arrive with title == "Untitled"
+        // (race against patchSession). If we already hold a non-default
+        // title locally, keep it to avoid downgrading the sidebar.
+        final existing = list.where((x) => x.key == s.key).cast<Session?>().firstWhere(
+              (_) => true,
+              orElse: () => null,
+            );
+        final preserveTitle = existing != null &&
+            existing.title.isNotEmpty &&
+            existing.title != 'Untitled' &&
+            (s.title.isEmpty || s.title == 'Untitled');
+        final merged = preserveTitle ? s.copyWith(title: existing.title) : s;
+
+        final next = [...list.where((x) => x.key != merged.key), merged]
           ..sort((a, b) {
             if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
             return b.updatedAt.compareTo(a.updatedAt);
@@ -84,6 +96,20 @@ class SessionsController extends Notifier<SessionsState> {
         state = state.copyWith(sessions: AsyncValue.data(next));
       }).cancel,
     );
+  }
+
+  /// Insert (or update) a session in the sidebar immediately, without any
+  /// network call. Used by the chat composer to show a brand-new session in
+  /// the history list the instant the user sends their first message — so the
+  /// user never sees a delay between sending and the session appearing.
+  void upsertLocal(Session session) {
+    final list = state.sessions.valueOrNull ?? const <Session>[];
+    final next = [...list.where((x) => x.key != session.key), session]
+      ..sort((a, b) {
+        if (a.pinned != b.pinned) return a.pinned ? -1 : 1;
+        return b.updatedAt.compareTo(a.updatedAt);
+      });
+    state = state.copyWith(sessions: AsyncValue.data(next));
   }
 
   void setFilter(SessionFilter f) => state = state.copyWith(filter: f);

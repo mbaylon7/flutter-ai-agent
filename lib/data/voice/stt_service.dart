@@ -1,25 +1,38 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
-import 'package:speech_to_text/speech_recognition_error.dart';
-import 'package:speech_to_text/speech_recognition_result.dart';
-import 'package:speech_to_text/speech_to_text.dart';
-import 'package:stt_tts/data/voice/voice_constants.dart';
+import 'package:record/record.dart';
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
+import 'package:stt_tts/data/voice/sherpa_assets.dart';
 
+/// On-device streaming speech-to-text backed by Sherpa-ONNX (zipformer
+/// transducer). Replaces the previous speech_to_text/Vosk implementations.
+///
+/// Public surface is identical to the prior service so [VoiceSession] and
+/// other callers don't need to change:
+///   - [init], [isAvailable], [isListening]
+///   - [start] / [startContinuous] (alias) / [stop]
+///   - [status], [transcript], [normalizedLevel] streams
+///
+/// Why Sherpa? It runs entirely in-process — no Android RecognitionService,
+/// no system start/stop beeps. The model lives in `assets/models/` and is
+/// copied to the app support directory on first launch.
 class SttService {
-  final SpeechToText _stt = SpeechToText();
+  static const _modelDir = 'assets/models/sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06';
+  static const _sampleRate = 16000;
+  static const _encoderFile = 'encoder.onnx';
+  static const _decoderFile = 'decoder.onnx';
+  static const _joinerFile = 'joiner.onnx';
+
+  sherpa.OnlineRecognizer? _recognizer;
+  sherpa.OnlineStream? _stream;
+  final AudioRecorder _recorder = AudioRecorder();
+  StreamSubscription<Uint8List>? _audioSub;
+
   bool _enabled = false;
   bool _listening = false;
-  bool _userWantsToListen = false;
-  bool _hasReceivedFinalResult = false;
-  String? _localeId;
-
-  // Sound-level normalization (sentinel-seeded; see CLAUDE.md)
-  double _minSoundLevel = VoiceConstants.soundLevelSeedMin;
-  double _maxSoundLevel = VoiceConstants.soundLevelSeedMax;
-  double _currentSoundLevel = 0;
-  DateTime _lastLevelTick = DateTime.now();
+  String _lastEmittedText = '';
 
   final _statusCtl = StreamController<SttStatus>.broadcast();
   final _transcriptCtl = StreamController<SttTranscript>.broadcast();
@@ -29,119 +42,189 @@ class SttService {
   Stream<SttTranscript> get transcript => _transcriptCtl.stream;
   Stream<double> get normalizedLevel => _levelCtl.stream;
 
-  Future<void> init() async {
-    try {
-      _enabled = await _stt.initialize(
-        onStatus: _onStatus, onError: _onError, debugLogging: false,
-      );
-      if (_enabled) {
-        final locales = await _stt.locales();
-        final sys = await _stt.systemLocale();
-        _localeId = sys?.localeId;
-        if (_localeId == null || !locales.any((l) => l.localeId == _localeId)) {
-          final en = locales.where((e) => e.localeId.startsWith('en')).toList();
-          _localeId = en.isNotEmpty ? en.first.localeId
-              : (locales.isNotEmpty ? locales.first.localeId : null);
-        }
-      }
-    } on PlatformException {
-      _enabled = false;
-    } on MissingPluginException {
-      _enabled = false;
-    }
-  }
-
   bool get isAvailable => _enabled;
   bool get isListening => _listening;
 
-  Future<void> start() async {
-    if (!_enabled) return;
-    _userWantsToListen = true;
-    _hasReceivedFinalResult = false;
-    _resetLevels();
-    await _begin();
+  Future<void> init() async {
+    try {
+      sherpa.initBindings();
+      final encoder = await copyAssetFile('$_modelDir/$_encoderFile');
+      final decoder = await copyAssetFile('$_modelDir/$_decoderFile');
+      final joiner = await copyAssetFile('$_modelDir/$_joinerFile');
+      final tokens = await copyAssetFile('$_modelDir/tokens.txt');
+
+      final transducer = sherpa.OnlineTransducerModelConfig(
+        encoder: encoder,
+        decoder: decoder,
+        joiner: joiner,
+      );
+      final model = sherpa.OnlineModelConfig(
+        transducer: transducer,
+        tokens: tokens,
+        modelType: 'zipformer2',
+        numThreads: 2,
+        debug: false,
+      );
+      final config = sherpa.OnlineRecognizerConfig(
+        model: model,
+        ruleFsts: '',
+        enableEndpoint: true,
+        rule1MinTrailingSilence: 1.5,
+        rule2MinTrailingSilence: 0.8,
+        rule3MinUtteranceLength: 20,
+        decodingMethod: 'modified_beam_search',
+      );
+      _recognizer = sherpa.OnlineRecognizer(config);
+      _enabled = true;
+    } on PlatformException catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.init] PlatformException: $e\n$st');
+      _enabled = false;
+    } on MissingPluginException catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.init] MissingPluginException: $e\n$st');
+      _enabled = false;
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.init] FAILED: $e\n$st');
+      _enabled = false;
+    }
+  }
+
+  /// One-shot listen — kept as an alias of [startContinuous] for API parity
+  /// with the previous speech_to_text-based service.
+  Future<void> start({Duration? pauseFor}) => startContinuous(pauseFor: pauseFor);
+
+  Future<void> startContinuous({Duration? pauseFor}) async {
+    if (!_enabled || _recognizer == null) return;
+    if (_listening) return;
+
+    if (!await _recorder.hasPermission()) {
+      _statusCtl.add(SttStatus.failed);
+      return;
+    }
+
+    _stream = _recognizer!.createStream();
+    _lastEmittedText = '';
+
+    try {
+      final pcm = await _recorder.startStream(const RecordConfig(
+        encoder: AudioEncoder.pcm16bits,
+        sampleRate: _sampleRate,
+        numChannels: 1,
+        // VOICE_COMMUNICATION engages Android's built-in acoustic echo
+        // cancellation — needed for Phase 3 barge-in, harmless in Phase 1.
+        androidConfig: AndroidRecordConfig(
+          audioSource: AndroidAudioSource.voiceCommunication,
+        ),
+      ));
+      _audioSub = pcm.listen(_onPcm, onError: (_) {
+        _statusCtl.add(SttStatus.failed);
+      });
+      _listening = true;
+      _statusCtl.add(SttStatus.listening);
+    } on PlatformException catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.startContinuous] PlatformException: $e\n$st');
+      _statusCtl.add(SttStatus.failed);
+      await _teardown();
+    } catch (e, st) {
+      // ignore: avoid_print
+      print('[SttService.startContinuous] FAILED: $e\n$st');
+      _statusCtl.add(SttStatus.failed);
+      await _teardown();
+    }
   }
 
   Future<void> stop() async {
-    _userWantsToListen = false;
-    await _stt.stop();
-    _listening = false;
+    if (!_listening) return;
+    await _teardown();
     _statusCtl.add(SttStatus.idle);
   }
 
-  Future<void> _begin() async {
+  Future<void> _teardown() async {
+    _listening = false;
+    await _audioSub?.cancel();
+    _audioSub = null;
     try {
-      await _stt.listen(
-        onResult: _onResult,
-        onSoundLevelChange: _onLevel,
-        localeId: _localeId,
-        listenFor: VoiceConstants.listenFor,
-        pauseFor: VoiceConstants.pauseFor,
-        listenOptions: SpeechListenOptions(
-          partialResults: true,
-          listenMode: VoiceConstants.listenMode,
-          cancelOnError: false,
-          autoPunctuation: VoiceConstants.autoPunctuation,
-        ),
-      );
-    } on PlatformException {
-      _userWantsToListen = false;
-      _statusCtl.add(SttStatus.failed);
-    }
-  }
-
-  void _onStatus(String s) {
-    final nowListening = s == SpeechToText.listeningStatus;
-    _listening = nowListening;
-    _statusCtl.add(nowListening ? SttStatus.listening : SttStatus.idle);
-    // Restart loop — preserved from POC
-    if (!nowListening && s == SpeechToText.doneStatus && _userWantsToListen) {
-      if (_hasReceivedFinalResult) {
-        _userWantsToListen = false;
-        _hasReceivedFinalResult = false;
-        return;
+      if (await _recorder.isRecording()) {
+        await _recorder.stop();
       }
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (_userWantsToListen && !_listening) _begin();
-      });
+    } catch (_) {/* best-effort */}
+    _stream?.free();
+    _stream = null;
+  }
+
+  int _pcmChunkCount = 0;
+  void _onPcm(Uint8List bytes) {
+    final stream = _stream;
+    final rec = _recognizer;
+    if (stream == null || rec == null) {
+      // ignore: avoid_print
+      print('[SttService] onPcm dropped: stream=${stream != null} rec=${rec != null}');
+      return;
+    }
+
+    final samples = convertBytesToFloat32(bytes);
+    _emitLevel(samples);
+
+    stream.acceptWaveform(samples: samples, sampleRate: _sampleRate);
+    while (rec.isReady(stream)) {
+      rec.decode(stream);
+    }
+
+    final text = rec.getResult(stream).text.trim();
+    final endpoint = rec.isEndpoint(stream);
+
+    // Log every 50 chunks (~5s @ 100ms chunks) so we can see if PCM keeps
+    // flowing without spamming.
+    _pcmChunkCount++;
+    if (_pcmChunkCount % 50 == 0) {
+      // ignore: avoid_print
+      print('[SttService] pcm tick chunk#$_pcmChunkCount bytes=${bytes.length} text="$text" endpoint=$endpoint');
+    }
+
+    if (text.isNotEmpty && text != _lastEmittedText) {
+      _lastEmittedText = text;
+      _transcriptCtl.add(SttTranscript(
+        text: _smartFormat(text),
+        isFinal: false,
+      ));
+    }
+
+    if (endpoint) {
+      if (text.isNotEmpty) {
+        // Zipformer never emits punctuation; append a period so each
+        // utterance reads as a sentence and the AI subtitle/echo doesn't
+        // run multiple sentences together.
+        final withPeriod = text.endsWith('.') || text.endsWith('?') || text.endsWith('!')
+            ? text
+            : '$text.';
+        _transcriptCtl.add(SttTranscript(
+          text: _smartFormat(withPeriod),
+          isFinal: true,
+        ));
+      }
+      rec.reset(stream);
+      _lastEmittedText = '';
     }
   }
 
-  void _onError(SpeechRecognitionError e) {
-    final msg = e.errorMsg;
-    if (msg.contains('error_no_match')) return; // transient
-    _userWantsToListen = false;
-    _statusCtl.add(SttStatus.failed);
-  }
-
-  void _onResult(SpeechRecognitionResult r) {
-    if (r.recognizedWords.trim().isEmpty) return;
-    final formatted = _smartFormat(r.recognizedWords);
-    _transcriptCtl.add(SttTranscript(text: formatted, isFinal: r.finalResult));
-    if (r.finalResult) _hasReceivedFinalResult = true;
-  }
-
-  void _onLevel(double l) {
-    final now = DateTime.now();
-    if (now.difference(_lastLevelTick).inMilliseconds < 100) return;
-    _lastLevelTick = now;
-    _minSoundLevel = min(_minSoundLevel, l);
-    _maxSoundLevel = max(_maxSoundLevel, l);
-    _currentSoundLevel = l;
-    final range = (_maxSoundLevel - _minSoundLevel).abs();
-    final norm = (range < 1e-6 || !_listening)
-        ? 0.0
-        : ((_currentSoundLevel - _minSoundLevel) / range).clamp(0.0, 1.0);
+  // Simple peak-amplitude → 0..1 envelope so the wave-bar visualiser has
+  // something to react to. Avoids the noisy seeded-range approach by just
+  // taking the max absolute sample in the chunk.
+  void _emitLevel(Float32List samples) {
+    if (samples.isEmpty) return;
+    var peak = 0.0;
+    for (var i = 0; i < samples.length; i++) {
+      final v = samples[i].abs();
+      if (v > peak) peak = v;
+    }
+    // Compress so quiet speech still reads as motion in the UI.
+    final norm = (peak * 3.0).clamp(0.0, 1.0);
     _levelCtl.add(norm);
   }
 
-  void _resetLevels() {
-    _minSoundLevel = VoiceConstants.soundLevelSeedMin;
-    _maxSoundLevel = VoiceConstants.soundLevelSeedMax;
-    _currentSoundLevel = 0;
-  }
-
-  // Smart formatting (lifted from POC)
   String _smartFormat(String text) {
     if (text.isEmpty) return text;
     var r = text;
@@ -155,6 +238,9 @@ class SttService {
   }
 
   Future<void> dispose() async {
+    await stop();
+    _recognizer?.free();
+    _recognizer = null;
     await _statusCtl.close();
     await _transcriptCtl.close();
     await _levelCtl.close();
@@ -162,6 +248,7 @@ class SttService {
 }
 
 enum SttStatus { idle, listening, failed }
+
 class SttTranscript {
   const SttTranscript({required this.text, required this.isFinal});
   final String text;

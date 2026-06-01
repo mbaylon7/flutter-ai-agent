@@ -1,88 +1,47 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:stt_tts/core/theme.dart';
+import 'package:stt_tts/core/design_tokens.dart';
 import 'package:stt_tts/domain/models/session.dart';
 import 'package:stt_tts/state/sessions_provider.dart';
+import 'package:stt_tts/state/theme_provider.dart';
 import 'package:stt_tts/ui/sessions/session_actions_sheet.dart';
 import 'package:stt_tts/ui/sessions/session_row.dart';
 import 'package:stt_tts/ui/sessions/session_search_bar.dart';
+import 'package:stt_tts/ui/settings/settings_screen.dart';
 
-/// Sessions drawer.
-///
-/// Designed to be mounted as a [Drawer] child (Task 9 wires the gesture).
-/// Takes an explicit [width] so the parent controls how wide the panel is.
-///
-/// Does NOT integrate with HomeShell — that is Task 9's responsibility.
+/// Sessions drawer — themed via [OcTokens]. Layout mirrors the HTML
+/// `.drawer-sheet`: dark `--drawer-bg` in dark mode, light in light mode,
+/// 85% width, all type at 13px / 11.5px per the design spec.
 class SessionsDrawer extends ConsumerWidget {
   const SessionsDrawer({super.key, this.width});
 
-  /// Optional explicit width. Falls back to [MediaQuery] 80% if omitted.
   final double? width;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mq = MediaQuery.of(context);
-    final drawerWidth = width ?? mq.size.width * 0.80;
-
+    final drawerWidth = width ?? mq.size.width * 0.85;
+    final tokens = ref.watch(tokensProvider);
     final state = ref.watch(sessionsProvider);
     final currentKey = ref.watch(currentSessionProvider);
 
     return Container(
       width: drawerWidth,
-      color: OcColors.surface,
+      color: tokens.drawerBg,
       child: Column(
         children: [
-          // ----------------------------------------------------------------
-          // Top bar
-          // ----------------------------------------------------------------
-          SizedBox(
-            height: 56 + mq.padding.top,
-            child: Padding(
-              padding: EdgeInsets.only(top: mq.padding.top),
-              child: Row(
-                children: [
-                  const SizedBox(width: 16),
-                  const Expanded(
-                    child: Text(
-                      'Conversations',
-                      style: TextStyle(
-                        color: OcColors.textPrimary,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18,
-                      ),
-                    ),
-                  ),
-                  Tooltip(
-                    message: 'New conversation',
-                    child: IconButton(
-                      icon: const Icon(Icons.add_comment_outlined,
-                          color: OcColors.textPrimary, size: 22),
-                      onPressed: () {
-                        ref.read(currentSessionProvider.notifier).state =
-                            null;
-                        Navigator.of(context).maybePop();
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                ],
-              ),
-            ),
+          SizedBox(height: mq.padding.top + 8),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(18, 14, 18, 6),
+            child: SessionSearchBar(),
           ),
-
-          // ----------------------------------------------------------------
-          // Search + filter chips
-          // ----------------------------------------------------------------
-          const SessionSearchBar(),
-
-          // ----------------------------------------------------------------
-          // Body
-          // ----------------------------------------------------------------
+          _NewChatRow(
+            onTap: () {
+              ref.read(currentSessionProvider.notifier).state = null;
+              Navigator.of(context).maybePop();
+            },
+          ),
           Expanded(child: _Body(state: state, currentKey: currentKey)),
-
-          // ----------------------------------------------------------------
-          // Footer
-          // ----------------------------------------------------------------
           _Footer(bottomPadding: mq.padding.bottom),
         ],
       ),
@@ -90,9 +49,40 @@ class SessionsDrawer extends ConsumerWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Body — loading / error / list
-// ---------------------------------------------------------------------------
+class _NewChatRow extends ConsumerWidget {
+  const _NewChatRow({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = ref.watch(tokensProvider);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, color: tokens.text, size: 18),
+              const SizedBox(width: 12),
+              Text(
+                'New chat',
+                style: TextStyle(
+                  color: tokens.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _Body extends ConsumerWidget {
   const _Body({required this.state, required this.currentKey});
@@ -102,33 +92,31 @@ class _Body extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = ref.watch(tokensProvider);
     final visible = state.visible;
 
     return visible.when(
-      loading: () => const Center(
+      loading: () => Center(
         child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: OcColors.accent,
-          ),
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(strokeWidth: 2, color: tokens.accent),
         ),
       ),
       error: (err, st) => Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               "Couldn't load conversations",
-              style: TextStyle(color: OcColors.textSubtitle),
+              style: TextStyle(color: tokens.textMuted, fontSize: 13),
             ),
             const SizedBox(height: 12),
             TextButton(
               onPressed: () => ref.invalidate(sessionsProvider),
-              child: const Text(
+              child: Text(
                 'Retry',
-                style: TextStyle(color: OcColors.accent),
+                style: TextStyle(color: tokens.accent, fontSize: 13),
               ),
             ),
           ],
@@ -140,25 +128,20 @@ class _Body extends ConsumerWidget {
           return Center(
             child: Text(
               hasQuery ? 'No matches' : 'No conversations yet',
-              style: const TextStyle(color: OcColors.textSubtitle),
+              style: TextStyle(color: tokens.textMuted, fontSize: 13),
             ),
           );
         }
 
-        final pinned = sessions.where((s) => s.pinned).toList();
-        final recent = sessions.where((s) => !s.pinned).toList();
-
+        final ordered = [
+          ...sessions.where((s) => s.pinned),
+          ...sessions.where((s) => !s.pinned),
+        ];
         return ListView(
-          padding: EdgeInsets.zero,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
           children: [
-            if (pinned.isNotEmpty) ...[
-              _SectionHeader(label: '📌 Pinned'),
-              ...pinned.map((s) => _rowFor(context, ref, s, currentKey)),
-            ],
-            if (recent.isNotEmpty) ...[
-              _SectionHeader(label: 'Recent'),
-              ...recent.map((s) => _rowFor(context, ref, s, currentKey)),
-            ],
+            const _SectionLabel(label: 'Chats'),
+            ...ordered.map((s) => _rowFor(context, ref, s, currentKey)),
           ],
         );
       },
@@ -182,7 +165,7 @@ class _Body extends ConsumerWidget {
       onLongPress: () {
         showModalBottomSheet<void>(
           context: context,
-          backgroundColor: OcColors.surface,
+          backgroundColor: ref.read(tokensProvider).drawerBg,
           shape: const RoundedRectangleBorder(
             borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
           ),
@@ -196,92 +179,90 @@ class _Body extends ConsumerWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Section header
-// ---------------------------------------------------------------------------
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.label});
+class _SectionLabel extends ConsumerWidget {
+  const _SectionLabel({required this.label});
 
   final String label;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = ref.watch(tokensProvider);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
       child: Text(
         label,
-        style: const TextStyle(
-          color: OcColors.textMeta,
-          fontSize: 11,
+        style: TextStyle(
+          color: tokens.textMuted,
+          fontSize: 11.5,
           fontWeight: FontWeight.w600,
-          letterSpacing: 0.4,
+          letterSpacing: -0.005 * 11.5,
         ),
       ),
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// Footer: avatar + name + settings gear
-// ---------------------------------------------------------------------------
-
-class _Footer extends StatelessWidget {
+class _Footer extends ConsumerWidget {
   const _Footer({required this.bottomPadding});
 
   final double bottomPadding;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = ref.watch(tokensProvider);
     return Container(
-      height: 56 + bottomPadding,
       padding: EdgeInsets.only(
-        bottom: bottomPadding,
-        left: 12,
-        right: 4,
+        bottom: bottomPadding + 12,
+        top: 12,
+        left: 20,
+        right: 12,
       ),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: OcColors.borderTint)),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: tokens.border)),
       ),
       child: Row(
         children: [
-          // Avatar circle
           Container(
             width: 36,
             height: 36,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: OcColors.accent,
+            decoration: BoxDecoration(
+              color: tokens.surfaceActive,
               shape: BoxShape.circle,
             ),
-            child: const Text(
+            child: Text(
               'M',
               style: TextStyle(
-                color: OcColors.bgBottom,
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              'Marvin',
-              style: TextStyle(
-                color: OcColors.textPrimary,
+                color: tokens.text,
                 fontWeight: FontWeight.w600,
                 fontSize: 14,
               ),
             ),
           ),
-          // Settings gear — deferred to slice 1D
-          Tooltip(
-            message: 'Settings coming soon',
-            child: IconButton(
-              icon: const Icon(Icons.settings_outlined,
-                  color: OcColors.textMeta, size: 20),
-              onPressed: null, // disabled — slice 1D
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Marvin',
+              style: TextStyle(
+                color: tokens.text,
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+              ),
             ),
+          ),
+          IconButton(
+            tooltip: 'Settings',
+            icon: Icon(Icons.settings_outlined,
+                color: tokens.textMuted, size: 18),
+            onPressed: () {
+              final navigator = Navigator.of(context);
+              navigator.maybePop();
+              Future.delayed(const Duration(milliseconds: 200), () {
+                navigator.push(
+                  MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                );
+              });
+            },
           ),
         ],
       ),

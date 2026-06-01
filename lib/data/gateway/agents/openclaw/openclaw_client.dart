@@ -50,22 +50,13 @@ class OpenClawGatewayClient implements GatewayClient {
     final identity = await _identityManager.loadOrCreate();
     _instanceId ??= newInstanceId();
 
-    // The gateway enforces an Origin allowlist (gateway.controlUi.allowedOrigins).
-    // Defaults are http://localhost:<port> and http://127.0.0.1:<port>.
-    //
-    // For loopback hosts and the Android-emulator host alias (10.0.2.2 → host's
-    // 127.0.0.1), rewrite Origin to 127.0.0.1 so it lands inside the default
-    // allowlist regardless of which name the client used to dial.
-    //
-    // For non-loopback hosts (real LAN / WAN), pass the URL's authority through
-    // unchanged — the gateway operator must add that origin to allowedOrigins.
+    // The gateway enforces an Origin allowlist (gateway.controlUi.allowedOrigins),
+    // which on a deployed server is built from SERVER_HOST (e.g.
+    // https://178.104.222.39:18789). Advertise the dial host so the Origin
+    // matches the deployed allowlist; loopback works too on a default install.
     final wsUri = Uri.parse(config.wsUrl);
     final originScheme = wsUri.scheme == 'wss' ? 'https' : 'http';
-    const loopbackHosts = {'localhost', '127.0.0.1', '10.0.2.2'};
-    final originAuthority = loopbackHosts.contains(wsUri.host)
-        ? '127.0.0.1:${wsUri.port}'
-        : wsUri.authority;
-    final origin = '$originScheme://$originAuthority';
+    final origin = '$originScheme://${wsUri.host}:${wsUri.port}';
     final conn = WsConnection.connect(
       wsUri,
       log: _log,
@@ -85,9 +76,11 @@ class OpenClawGatewayClient implements GatewayClient {
     final nonce = challenge.payload['nonce'] as String;
     _log.info('challenge received, nonce=$nonce');
 
-    // Build the device proof — token only when no deviceToken yet.
-    final tokenForProof =
-        config.deviceToken == null ? config.token : null;
+    // The gateway resolves the signature token as
+    // `auth.token ?? auth.deviceToken ?? auth.bootstrapToken`. We must sign
+    // with the same value, otherwise the server-rebuilt canonical won't match
+    // ours and the connect is rejected as "device signature invalid".
+    final tokenForProof = config.token ?? config.deviceToken;
     final proof = await buildDeviceProof(
       identity: identity,
       clientId: currentClientId(),
@@ -146,7 +139,9 @@ class OpenClawGatewayClient implements GatewayClient {
 
   void _ensureEventRouter() {
     if (_eventSub != null) return;
-    _eventSub = _conn!.frames.listen((f) {
+    final conn = _conn;
+    if (conn == null) return; // Phase 1 bypass: no socket, no router.
+    _eventSub = conn.frames.listen((f) {
       if (f is! EventFrame) return;
       _routeEvent(f);
     });
@@ -196,9 +191,18 @@ class OpenClawGatewayClient implements GatewayClient {
       case 'sessions.changed':
       case 'session.added':
       case 'session.updated':
-        final session = (p as Map?)?.cast<String, dynamic>();
-        if (session != null && session['key'] != null) {
-          _sessionStream.add(Session.fromJson(session));
+        final raw = (p as Map?)?.cast<String, dynamic>();
+        if (raw != null) {
+          // Gateway emits `sessionKey`; Session.fromJson expects `key`.
+          // Normalize so the event isn't silently dropped.
+          final normalized = <String, dynamic>{
+            ...raw,
+            if (raw['key'] == null && raw['sessionKey'] != null)
+              'key': raw['sessionKey'],
+          };
+          if (normalized['key'] != null) {
+            _sessionStream.add(Session.fromJson(normalized));
+          }
         }
         break;
     }
@@ -209,6 +213,7 @@ class OpenClawGatewayClient implements GatewayClient {
   @override
   Future<List<Session>> listSessions() async {
     _ensureEventRouter();
+    if (_rpc == null) return const []; // Phase 1 bypass.
     final res = await _rpc!.request(
       method: 'sessions.list',
       params: const {},
@@ -227,13 +232,15 @@ class OpenClawGatewayClient implements GatewayClient {
 
   @override
   Future<void> patchSession(String sessionKey, {String? title}) async {
-    final params = <String, dynamic>{'sessionKey': sessionKey};
-    if (title != null) params['displayName'] = title;
+    if (_rpc == null) return; // Phase 1 bypass.
+    final params = <String, dynamic>{'key': sessionKey};
+    if (title != null) params['label'] = title;
     await _rpc!.request(method: 'sessions.patch', params: params);
   }
 
   @override
   Future<void> deleteSession(String sessionKey) async {
+    if (_rpc == null) return; // Phase 1 bypass.
     await _rpc!.request(
       method: 'sessions.delete',
       params: {'sessionKey': sessionKey},
@@ -245,11 +252,16 @@ class OpenClawGatewayClient implements GatewayClient {
   @override
   Future<List<Message>> loadHistory(String sessionKey) async {
     _ensureEventRouter();
+    if (_rpc == null) return const []; // Phase 1 bypass.
     final res = await _rpc!.request(
       method: 'chat.history',
       params: {'sessionKey': sessionKey},
     );
     final raw = (res['messages'] as List? ?? const []).cast<Map>();
+    _log.info('history: ${raw.length} raw messages');
+    for (var i = 0; i < raw.length && i < 6; i++) {
+      _log.info('history[$i] keys=${raw[i].keys.toList()} role=${raw[i]['role']}');
+    }
     return raw
         .map((m) => Message.fromJson(m.cast<String, dynamic>()))
         .toList(growable: false);
@@ -262,6 +274,9 @@ class OpenClawGatewayClient implements GatewayClient {
     required String idempotencyKey,
   }) async {
     _ensureEventRouter();
+    if (_rpc == null) {
+      return ChatRun(runId: 'phase1-bypass', sessionKey: sessionKey);
+    }
     final res = await _rpc!.request(
       method: 'chat.send',
       params: {
@@ -284,6 +299,7 @@ class OpenClawGatewayClient implements GatewayClient {
 
   @override
   Future<void> abort(String runId) async {
+    if (_rpc == null) return; // Phase 1 bypass.
     await _rpc!.request(method: 'chat.abort', params: {'runId': runId});
   }
 }

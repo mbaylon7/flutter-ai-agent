@@ -35,7 +35,8 @@ class Session {
 
   factory Session.fromJson(Map<String, dynamic> j) => Session(
         key: j['key'] as String,
-        title: (j['displayName'] as String?) ?? 'Untitled',
+        title:
+            (j['label'] as String?) ?? (j['displayName'] as String?) ?? 'Untitled',
         updatedAt: DateTime.fromMillisecondsSinceEpoch(
           (j['updatedAt'] as num?)?.toInt() ?? 0,
         ),
